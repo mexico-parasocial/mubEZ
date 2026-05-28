@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "app.m8.community.membership",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A membership record stored in the member's personal repo.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["communityDid", "status", "joinedAt"],
+        "properties": {
+          "communityDid": { "type": "string", "format": "did" },
+          "status": { "type": "ref", "ref": "app.m8.community.defs#membershipStatus" },
+          "joinedAt": { "type": "string", "format": "datetime" },
+          "communityRecordUri": { "type": "string", "format": "at-uri" }
+        }
+      }
+    }
+  }
+}

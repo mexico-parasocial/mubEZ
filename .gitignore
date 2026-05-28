@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.adonisjs/
+
+# Environment
+.env
+.env.local
+
+# Database
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# ZKP generated artifacts
+zkp/out/*.r1cs
+zkp/out/*.sym
+zkp/out/*.zkey
+zkp/out/*.ptau
+zkp/out/*.wtns
+zkp/out/*.json
+!zkp/out/*_vkey.json
+zkp/out/ine_age_proof_js/
+zkp/out/nullifier_proof_js/
+zkp/circomlib/
+
+# Test artifacts
+coverage/
+
+# OS
+.DS_Store
+.watchman-cookie*
+
+# This backend uses pnpm for Docker and deploy parity.
+package-lock.json

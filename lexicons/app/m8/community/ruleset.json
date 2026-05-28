@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "app.m8.community.ruleset",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Community ruleset document.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["text", "updatedAt"],
+        "properties": {
+          "text": { "type": "string", "maxLength": 50000 },
+          "version": { "type": "integer", "minimum": 1 },
+          "updatedAt": { "type": "string", "format": "datetime" },
+          "actionUri": { "type": "string", "format": "at-uri" }
+        }
+      }
+    }
+  }
+}

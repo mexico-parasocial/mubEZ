@@ -1,0 +1,22 @@
+{
+  "lexicon": 1,
+  "id": "app.m8.community.blogPost",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A blog post published by the community.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["title", "content", "authorDid", "createdAt"],
+        "properties": {
+          "title": { "type": "string", "maxLength": 300 },
+          "content": { "type": "string", "maxLength": 100000 },
+          "authorDid": { "type": "string", "format": "did" },
+          "createdAt": { "type": "string", "format": "datetime" },
+          "actionUri": { "type": "string", "format": "at-uri" }
+        }
+      }
+    }
+  }
+}

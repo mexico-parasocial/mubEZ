@@ -1,0 +1,1399 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Muvis API",
+    "version": "0.1.0",
+    "summary": "Proof broker, credential wallet, trust policy, and anonymous identity API.",
+    "description": "M8 runs on AdonisJS and exposes a v1 JSON API. Protected endpoints use Bearer access tokens signed with jose. Runtime issuer and audience are configured with JWT_ISSUER and JWT_AUDIENCE; secrets are never exposed through the API contract."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current Muvis origin"
+    }
+  ],
+  "tags": [
+    { "name": "Sessions" },
+    { "name": "Grants" },
+    { "name": "Claims" },
+    { "name": "Providers" },
+    { "name": "Anonymous" },
+    { "name": "Device Trust" },
+    { "name": "Identity" },
+    { "name": "Civic Voting" },
+    { "name": "INE" },
+    { "name": "ZKP" },
+    { "name": "Issuers" },
+    { "name": "Karma" },
+    { "name": "Ledger" },
+    { "name": "Communities" },
+    { "name": "System" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "M8 access token returned by /v1/sessions/start or /v1/sessions/refresh."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "string" }
+        }
+      },
+      "ValidationErrorResponse": {
+        "type": "object",
+        "required": ["error", "issues"],
+        "properties": {
+          "error": { "type": "string", "const": "Validation failed" },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "message"],
+              "properties": {
+                "path": { "type": "string" },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "TokenBundle": {
+        "type": "object",
+        "required": ["accessToken", "refreshToken", "expiresIn"],
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "expiresIn": { "type": "integer", "minimum": 60 }
+        }
+      },
+      "SessionStartInput": {
+        "type": "object",
+        "required": ["identifier"],
+        "properties": {
+          "identifier": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "SessionStartAttempt": {
+        "type": "object",
+        "required": ["authUrl", "phaseLabel", "startedAt"],
+        "properties": {
+          "sessionId": { "type": "string" },
+          "attemptId": { "type": "string" },
+          "did": { "type": "string" },
+          "handle": { "type": "string" },
+          "identifier": { "type": "string" },
+          "authorizationServer": { "type": "string" },
+          "authUrl": { "type": "string" },
+          "phaseLabel": { "type": "string" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "resolvedAt": { "type": "string", "format": "date-time" },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": true
+      },
+      "Session": {
+        "type": "object",
+        "required": ["sessionId", "did", "handle", "claimRequests", "grants", "proofs", "paraStatus"],
+        "properties": {
+          "sessionId": { "type": "string" },
+          "did": { "type": "string" },
+          "handle": { "type": "string" },
+          "displayName": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "active", "suspended", "revoked"] },
+          "claimRequests": { "type": "array", "items": { "$ref": "#/components/schemas/ClaimRequest" } },
+          "grants": { "type": "array", "items": { "$ref": "#/components/schemas/Grant" } },
+          "proofs": { "type": "array", "items": { "$ref": "#/components/schemas/ProofArtifact" } },
+          "paraStatus": { "$ref": "#/components/schemas/ParaProviderStatus" }
+        },
+        "additionalProperties": true
+      },
+      "AnonymousProfile": {
+        "type": ["object", "null"],
+        "properties": {
+          "id": { "type": "string" },
+          "displayName": { "type": "string" },
+          "avatarSeed": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      },
+      "SessionStartResponse": {
+        "type": "object",
+        "required": ["attempt", "session", "tokens"],
+        "properties": {
+          "attempt": { "$ref": "#/components/schemas/SessionStartAttempt" },
+          "session": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/Session" },
+              { "type": "null" }
+            ]
+          },
+          "tokens": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/TokenBundle" },
+              { "type": "null" }
+            ]
+          },
+          "oauthUrl": { "type": ["string", "null"] }
+        },
+        "additionalProperties": true
+      },
+      "OAuthCallbackResponse": {
+        "type": "object",
+        "required": ["did", "authenticated", "sessionId", "session", "tokens"],
+        "properties": {
+          "did": { "type": "string" },
+          "authenticated": { "type": "boolean" },
+          "sessionId": { "type": "string" },
+          "session": { "$ref": "#/components/schemas/Session" },
+          "tokens": { "$ref": "#/components/schemas/TokenBundle" }
+        },
+        "additionalProperties": true
+      },
+      "ClaimSpec": {
+        "type": "object",
+        "required": ["type", "disclosure"],
+        "properties": {
+          "type": { "$ref": "#/components/schemas/ClaimType" },
+          "disclosure": { "$ref": "#/components/schemas/DisclosureMode" },
+          "requestedValue": { "type": "string" }
+        }
+      },
+      "ClaimType": {
+        "type": "string",
+        "enum": [
+          "has_para_verification",
+          "age_over_18",
+          "age_over_21",
+          "party_membership",
+          "party_tenure",
+          "pds_backup_coverage"
+        ]
+      },
+      "DisclosureMode": {
+        "type": "string",
+        "enum": ["proof-only", "signed-claim", "raw"]
+      },
+      "Surface": {
+        "type": "string",
+        "enum": ["public", "civic", "dating"]
+      },
+      "AppKind": {
+        "type": "string",
+        "enum": ["Consumer app", "Civic app", "Community app", "Local app", "Verifier", "Broker"]
+      },
+      "ClaimRequest": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "appId": { "type": "string" },
+          "appName": { "type": "string" },
+          "appKind": { "$ref": "#/components/schemas/AppKind" },
+          "surface": { "$ref": "#/components/schemas/Surface" },
+          "requestedClaims": { "type": "array", "items": { "$ref": "#/components/schemas/ClaimSpec" } },
+          "proofMode": { "$ref": "#/components/schemas/DisclosureMode" },
+          "status": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "Grant": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "appId": { "type": "string" },
+          "appName": { "type": "string" },
+          "appKind": { "$ref": "#/components/schemas/AppKind" },
+          "surface": { "$ref": "#/components/schemas/Surface" },
+          "requestedClaims": { "type": "array", "items": { "$ref": "#/components/schemas/ClaimSpec" } },
+          "proofMode": { "$ref": "#/components/schemas/DisclosureMode" },
+          "status": { "type": "string", "enum": ["pending", "approved", "revoked", "expired", "suspended"] },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "GrantRequestInput": {
+        "type": "object",
+        "required": ["appId", "appName", "appKind", "surface", "requestedClaims", "proofMode", "reason"],
+        "properties": {
+          "appId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "appName": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "appKind": { "$ref": "#/components/schemas/AppKind" },
+          "surface": { "$ref": "#/components/schemas/Surface" },
+          "requestedClaims": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/components/schemas/ClaimSpec" } },
+          "proofMode": { "$ref": "#/components/schemas/DisclosureMode" },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "GrantMutationResult": {
+        "type": "object",
+        "required": ["session", "grant", "proofs"],
+        "properties": {
+          "session": { "$ref": "#/components/schemas/Session" },
+          "grant": { "$ref": "#/components/schemas/Grant" },
+          "proofs": { "type": "array", "items": { "$ref": "#/components/schemas/ProofArtifact" } }
+        }
+      },
+      "ProofArtifact": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "grantId": { "type": "string" },
+          "claimType": { "$ref": "#/components/schemas/ClaimType" },
+          "outcome": { "type": "string", "enum": ["verified", "not-verified", "matched", "mismatched", "bounded"] },
+          "statement": { "type": "string" },
+          "proofMode": { "$ref": "#/components/schemas/DisclosureMode" },
+          "issuerId": { "type": "string", "enum": ["para.identity", "m8.broker"] },
+          "verifierId": { "type": "string", "enum": ["para.identity", "m8.broker"] },
+          "audienceAppId": { "type": "string" },
+          "audienceAppName": { "type": "string" },
+          "surface": { "$ref": "#/components/schemas/Surface" },
+          "status": { "type": "string", "enum": ["pending", "active", "revoked", "expired", "suspended"] }
+        },
+        "additionalProperties": true
+      },
+      "ParaProviderStatus": {
+        "type": "object",
+        "properties": {
+          "providerId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "availability": { "type": "string" },
+          "compatibility": { "type": "string" },
+          "supportedClaims": { "type": "array", "items": { "$ref": "#/components/schemas/ClaimType" } }
+        },
+        "additionalProperties": true
+      },
+      "IdentityRequestInput": {
+        "type": "object",
+        "required": ["audienceAppId", "audienceAppName", "purpose", "requestedElements"],
+        "properties": {
+          "audienceAppId": { "type": "string" },
+          "audienceAppName": { "type": "string" },
+          "purpose": { "type": "string" },
+          "merchantIdentifier": { "type": "string" },
+          "requestedElements": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      },
+      "AgeProofPayload": {
+        "type": "object",
+        "required": ["proof", "publicSignals"],
+        "properties": {
+          "proof": {},
+          "publicSignals": {
+            "type": "array",
+            "minItems": 3,
+            "items": { "type": "string" },
+            "description": "Circuit public signals. Index 0 is the public commitment, index 1 is current year, index 2 is the age threshold."
+          }
+        },
+        "additionalProperties": false
+      },
+      "IneCredentialRequest": {
+        "type": "object",
+        "required": ["extracted", "verification", "ageProofs"],
+        "properties": {
+          "extracted": { "$ref": "#/components/schemas/GenericObject" },
+          "verification": { "$ref": "#/components/schemas/GenericObject" },
+          "ageProofs": {
+            "type": "object",
+            "required": ["over18"],
+            "properties": {
+              "over18": { "$ref": "#/components/schemas/AgeProofPayload" },
+              "over21": { "$ref": "#/components/schemas/AgeProofPayload" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "SignedCredential": {
+        "type": "object",
+        "required": ["id", "issuerDid", "issuerKeyId", "subjectDid", "issuedAt", "expiresAt", "claims", "revocationHash", "signatureAlg", "signature"],
+        "properties": {
+          "id": { "type": "string" },
+          "issuerDid": { "type": "string" },
+          "issuerKeyId": { "type": "string" },
+          "subjectDid": { "type": "string" },
+          "issuedAt": { "type": "string", "format": "date-time" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "claims": { "$ref": "#/components/schemas/GenericObject" },
+          "revocationHash": { "type": "string" },
+          "signatureAlg": { "type": "string", "const": "Ed25519" },
+          "signature": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "IneCredentialResponse": {
+        "type": "object",
+        "required": ["credential", "proofArtifactId", "verificationId", "commitment"],
+        "properties": {
+          "credential": { "$ref": "#/components/schemas/SignedCredential" },
+          "proofArtifactId": { "type": "string" },
+          "verificationId": { "type": "string" },
+          "commitment": { "type": "string" },
+          "anonymousProfile": { "$ref": "#/components/schemas/AnonymousProfile" }
+        },
+        "additionalProperties": false
+      },
+      "TrustedIssuer": {
+        "type": "object",
+        "required": ["did", "keyId", "name", "country", "status", "publicKeyPem", "allowedElements"],
+        "properties": {
+          "did": { "type": "string" },
+          "keyId": { "type": "string" },
+          "name": { "type": "string" },
+          "country": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "previous", "suspended", "revoked", "expired"] },
+          "notAfter": { "type": "string", "format": "date-time" },
+          "publicKeyPem": { "type": "string" },
+          "allowedElements": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      },
+      "ZkpFailureReason": {
+        "type": "string",
+        "enum": [
+          "invalid_proof",
+          "unknown_commitment",
+          "credential_revoked",
+          "community_mismatch",
+          "nullifier_already_used"
+        ]
+      },
+      "ZkpResult": {
+        "type": "object",
+        "required": ["valid"],
+        "properties": {
+          "valid": { "type": "boolean" },
+          "commitment": { "type": "string" },
+          "nullifier": { "type": "string" },
+          "reason": { "$ref": "#/components/schemas/ZkpFailureReason" }
+        }
+      },
+      "BinaryDownload": {
+        "type": "string",
+        "format": "binary"
+      },
+      "GenericObject": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid Bearer token.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "ValidationFailed": {
+        "description": "Request body failed validation.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationErrorResponse" } } }
+      },
+      "RateLimited": {
+        "description": "Rate limit exceeded.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      }
+    }
+  },
+  "paths": {
+    "/docs": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Render Scalar API documentation.",
+        "responses": {
+          "200": {
+            "description": "Scalar documentation HTML.",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Return the committed OpenAPI contract.",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 JSON document.",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health check.",
+        "responses": {
+          "200": {
+            "description": "Service health.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status", "service", "runtime", "timestamp"],
+                  "properties": {
+                    "status": { "type": "string", "const": "ok" },
+                    "service": { "type": "string" },
+                    "runtime": { "type": "string", "const": "adonisjs" },
+                    "timestamp": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/start": {
+      "post": {
+        "tags": ["Sessions"],
+        "summary": "Start an OAuth-gated M8 session.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionStartInput" } } }
+        },
+        "responses": {
+          "200": { "description": "Development/test session and tokens when the dev bootstrap feature flag is enabled.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionStartResponse" } } } },
+          "202": { "description": "OAuth authorization started. No M8 session is created and tokens are issued only from the OAuth callback.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionStartResponse" } } } },
+          "503": { "description": "OAuth authorization unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/sessions/oauth/callback": {
+      "get": {
+        "tags": ["Sessions"],
+        "summary": "Complete ATProto OAuth callback.",
+        "parameters": [
+          { "name": "code", "in": "query", "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OAuth callback result with issued tokens.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OAuthCallbackResponse" } } } },
+          "400": { "description": "OAuth callback failed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/sessions/me": {
+      "get": {
+        "tags": ["Sessions"],
+        "summary": "Return the authenticated session.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Current session and anonymous profile.",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "session": { "$ref": "#/components/schemas/Session" }, "anonymousProfile": { "$ref": "#/components/schemas/AnonymousProfile" } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/sessions/anonymous/enable": {
+      "post": {
+        "tags": ["Sessions", "Anonymous"],
+        "summary": "Enable the legacy anonymous profile for a session.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Anonymous profile.", "content": { "application/json": { "schema": { "type": "object", "properties": { "anonymousProfile": { "$ref": "#/components/schemas/AnonymousProfile" } } } } } },
+          "400": { "description": "Anonymous mode already enabled.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/sessions/anonymous/disable": {
+      "post": {
+        "tags": ["Sessions", "Anonymous"],
+        "summary": "Disable the legacy anonymous profile for a session.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Anonymous profile disabled.", "content": { "application/json": { "schema": { "type": "object", "properties": { "disabled": { "type": "boolean" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/sessions/refresh": {
+      "post": {
+        "tags": ["Sessions"],
+        "summary": "Refresh an access token.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["refreshToken"], "properties": { "refreshToken": { "type": "string" } } } } }
+        },
+        "responses": {
+          "200": { "description": "New access and rotated refresh token.", "content": { "application/json": { "schema": { "type": "object", "required": ["accessToken", "refreshToken", "expiresIn"], "properties": { "accessToken": { "type": "string" }, "refreshToken": { "type": "string" }, "expiresIn": { "type": "integer" } } } } } },
+          "400": { "description": "refreshToken missing.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/grants": {
+      "get": {
+        "tags": ["Grants"],
+        "summary": "List grants and proofs for the authenticated session.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Grants and proofs.", "content": { "application/json": { "schema": { "type": "object", "properties": { "grants": { "type": "array", "items": { "$ref": "#/components/schemas/Grant" } }, "proofs": { "type": "array", "items": { "$ref": "#/components/schemas/ProofArtifact" } } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Grants"],
+        "summary": "Create a grant request.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantRequestInput" } } } },
+        "responses": {
+          "201": { "description": "Grant mutation result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantMutationResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/grants/{id}/approve": {
+      "post": {
+        "tags": ["Grants"],
+        "summary": "Approve a grant.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "reviewNote": { "type": "string", "maxLength": 2048 }, "expiresAt": { "type": ["string", "null"], "format": "date-time" } } } } } },
+        "responses": {
+          "200": { "description": "Grant mutation result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantMutationResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/grants/{id}/revoke": {
+      "post": {
+        "tags": ["Grants"],
+        "summary": "Revoke a grant.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "reason": { "type": "string", "maxLength": 2048 } } } } } },
+        "responses": {
+          "200": { "description": "Grant mutation result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantMutationResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/claims/{id}/verify": {
+      "post": {
+        "tags": ["Claims"],
+        "summary": "Verify a direct claim.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Verification result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/providers/para/status": {
+      "get": {
+        "tags": ["Providers"],
+        "summary": "Return Para provider status.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Para provider status.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ParaProviderStatus" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/posts": {
+      "post": {
+        "tags": ["Posts"],
+        "summary": "Publish a public post through the authenticated PDS session.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                  "text": { "type": "string", "minLength": 1, "maxLength": 3000 },
+                  "surface": { "type": "string", "enum": ["public", "civic", "dating"] },
+                  "replyTo": {
+                    "type": "object",
+                    "required": ["uri", "cid"],
+                    "properties": {
+                      "uri": { "type": "string" },
+                      "cid": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Published post.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "post": {
+                      "type": "object",
+                      "properties": {
+                        "uri": { "type": "string" },
+                        "cid": { "type": "string" },
+                        "text": { "type": "string" },
+                        "surface": { "type": "string", "enum": ["public"] },
+                        "publishedAt": { "type": "string", "format": "date-time" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Unsupported surface.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Session does not have write scope.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/anonymous/identities": {
+      "get": {
+        "tags": ["Anonymous"],
+        "summary": "List anonymous identity cards.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Anonymous identities.", "content": { "application/json": { "schema": { "type": "object", "properties": { "identities": { "type": "array", "items": { "$ref": "#/components/schemas/GenericObject" } } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Anonymous"],
+        "summary": "Create an anonymous identity card.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "displayName": { "type": "string", "maxLength": 80 }, "surface": { "$ref": "#/components/schemas/Surface" }, "communityUri": { "type": ["string", "null"] } } } } } },
+        "responses": {
+          "201": { "description": "Created identity.", "content": { "application/json": { "schema": { "type": "object", "properties": { "identity": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/anonymous/identities/{id}": {
+      "patch": {
+        "tags": ["Anonymous"],
+        "summary": "Update an anonymous identity card.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "displayName": { "type": "string" }, "status": { "type": "string", "enum": ["active", "archived"] } } } } } },
+        "responses": {
+          "200": { "description": "Updated identity.", "content": { "application/json": { "schema": { "type": "object", "properties": { "identity": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/anonymous/posts": {
+      "post": {
+        "tags": ["Anonymous"],
+        "summary": "Link an anonymous post to an identity.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "201": { "description": "Linked post.", "content": { "application/json": { "schema": { "type": "object", "properties": { "post": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/anonymous/posts/{id}/dm-policy": {
+      "patch": {
+        "tags": ["Anonymous"],
+        "summary": "Update anonymous post DM policy.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["dmPolicy"], "properties": { "dmPolicy": { "type": "string", "enum": ["off", "requests", "para-verified"] } } } } } },
+        "responses": {
+          "200": { "description": "Updated post.", "content": { "application/json": { "schema": { "type": "object", "properties": { "post": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/anonymous/posts/{id}/stats": {
+      "patch": {
+        "tags": ["Anonymous"],
+        "summary": "Update anonymous post public stats.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Updated post.", "content": { "application/json": { "schema": { "type": "object", "properties": { "post": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/anonymous/identities/{id}/germ/link": {
+      "post": {
+        "tags": ["Anonymous"],
+        "summary": "Link a Germ contact URL after device trust.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["contactUrl"], "properties": { "contactUrl": { "type": "string", "format": "uri" }, "providerRef": { "type": "string" }, "mode": { "type": "string", "enum": ["germ-card-link", "m8-relay-pending-germ"] } } } } } },
+        "responses": {
+          "200": { "description": "Linked Germ contact.", "content": { "application/json": { "schema": { "type": "object", "properties": { "germ": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "400": { "description": "DID leak or validation failure.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Trusted device required.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/anonymous/identities/{id}/germ/unlink": {
+      "post": {
+        "tags": ["Anonymous"],
+        "summary": "Unlink Germ contact from an identity.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Unlinked Germ contact.", "content": { "application/json": { "schema": { "type": "object", "properties": { "germ": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/anonymous/public-contact": {
+      "get": {
+        "tags": ["Anonymous"],
+        "summary": "Return public anonymous contact configuration for a post.",
+        "parameters": [{ "name": "postUri", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Public contact state.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "400": { "description": "Missing postUri.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/anonymous/public-contact/eligibility": {
+      "get": {
+        "tags": ["Anonymous"],
+        "summary": "Check whether current sender can contact an anonymous post.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "postUri", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Eligible contact result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "403": { "description": "Sender does not meet contact requirement.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/device-trust/me": {
+      "get": {
+        "tags": ["Device Trust"],
+        "summary": "Return current device trust summary.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Device trust summary.", "content": { "application/json": { "schema": { "type": "object", "properties": { "deviceTrust": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/device-trust/development/verify": {
+      "post": {
+        "tags": ["Device Trust"],
+        "summary": "Development-only device trust override.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["platform", "deviceKeyId"], "properties": { "platform": { "type": "string", "enum": ["ios", "android", "web"] }, "deviceKeyId": { "type": "string" }, "publicKey": { "type": "string" } } } } } },
+        "responses": {
+          "200": { "description": "Trusted device summary.", "content": { "application/json": { "schema": { "type": "object", "properties": { "deviceTrust": { "$ref": "#/components/schemas/GenericObject" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Not available in production.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/identity/request": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Create an identity presentation request.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdentityRequestInput" } } } },
+        "responses": {
+          "201": { "description": "Created identity request.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/present": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Create a wallet presentation for an identity request.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Wallet presentation.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/verify": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Verify a wallet presentation.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Presentation verification result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } }
+        }
+      }
+    },
+    "/v1/identity/chat-key-backup": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Store opaque encrypted chat key backup.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Backup stored.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      },
+      "get": {
+        "tags": ["Identity"],
+        "summary": "Return opaque encrypted chat key backup.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Stored backup or null state.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Identity"],
+        "summary": "Delete opaque encrypted chat key backup.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Backup deletion result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/ine/analyze": {
+      "post": {
+        "tags": ["INE"],
+        "summary": "Analyze INE image data.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Extracted INE data.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/ine/verify": {
+      "post": {
+        "tags": ["INE"],
+        "summary": "Verify INE face match and RENAPO checks.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "INE verification result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/ine/credential": {
+      "post": {
+        "tags": ["INE"],
+        "summary": "Issue an INE-backed credential artifact from client-generated age proofs.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IneCredentialRequest" } } } },
+        "responses": {
+          "200": { "description": "Issued credential. The response never includes birthYear, salt, or witness material.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IneCredentialResponse" } } } },
+          "400": { "description": "Invalid or mismatched age proof.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "description": "The public commitment is already registered.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/identity/ine/zkp-verify": {
+      "post": {
+        "tags": ["ZKP"],
+        "summary": "Verify an INE age ZKP.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Valid proof.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ZkpResult" } } } },
+          "400": { "description": "Invalid proof or credential state.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ZkpResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/revoke": {
+      "post": {
+        "tags": ["Identity"],
+        "summary": "Revoke or suspend an identity proof artifact.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["revocationHash"], "properties": { "revocationHash": { "type": "string" }, "reason": { "type": "string" }, "targetStatus": { "type": "string", "enum": ["revoked", "suspended"] } } } } } },
+        "responses": {
+          "200": { "description": "Revocation result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "400": { "description": "Invalid state transition.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/civic-vote-proof": {
+      "post": {
+        "tags": ["Civic Voting"],
+        "summary": "Issue an m8 one-person-one-vote nullifier proof for a civic subject.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["subjectUri", "subjectType"], "properties": { "subjectUri": { "type": "string" }, "subjectType": { "type": "string", "enum": ["cabildeo", "policy", "matter", "governance", "raq_axis", "raq_proposal", "community_proposal", "community_deliberation", "open_question_reply"] }, "aliasDid": { "type": "string" } } } } } },
+        "responses": {
+          "200": { "description": "Civic vote proof.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Alias is not active for this person.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/identity/civic-vote-aliases": {
+      "post": {
+        "tags": ["Civic Voting"],
+        "summary": "Link an authorized pseudoidentity DID to the current private person root.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["did"], "properties": { "did": { "type": "string" }, "handle": { "type": "string" } } } } } },
+        "responses": {
+          "200": { "description": "Linked alias.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/identity/crl": {
+      "get": {
+        "tags": ["Identity"],
+        "summary": "Return credential revocation hashes.",
+        "parameters": [{ "name": "since", "in": "query", "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Credential revocation list.", "content": { "application/json": { "schema": { "type": "object", "properties": { "revokedHashes": { "type": "array", "items": { "type": "string" } }, "updatedAt": { "type": "string" } } } } } }
+        }
+      }
+    },
+    "/v1/identity/ine/zkp-prover.html": {
+      "get": {
+        "tags": ["ZKP"],
+        "summary": "Download the age proof browser prover HTML.",
+        "responses": { "200": { "description": "HTML prover.", "content": { "text/html": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/v1/identity/ine/zkp-prover.wasm": {
+      "get": {
+        "tags": ["ZKP"],
+        "summary": "Download the age proof WASM artifact.",
+        "responses": { "200": { "description": "WASM artifact.", "content": { "application/wasm": { "schema": { "$ref": "#/components/schemas/BinaryDownload" } } } } }
+      }
+    },
+    "/v1/identity/ine/zkp-prover.zkey": {
+      "get": {
+        "tags": ["ZKP"],
+        "summary": "Download the age proof zkey artifact.",
+        "responses": { "200": { "description": "zkey artifact.", "content": { "application/octet-stream": { "schema": { "$ref": "#/components/schemas/BinaryDownload" } } } } }
+      }
+    },
+    "/v1/identity/ine/zkp-nullifier": {
+      "post": {
+        "tags": ["ZKP"],
+        "summary": "Verify and record a community nullifier proof.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Valid nullifier proof.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ZkpResult" } } } },
+          "400": { "description": "Invalid proof, duplicate nullifier, or mismatch.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ZkpResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/identity/ine/nullifier-prover.wasm": {
+      "get": {
+        "tags": ["ZKP"],
+        "summary": "Download the nullifier proof WASM artifact.",
+        "responses": { "200": { "description": "WASM artifact.", "content": { "application/wasm": { "schema": { "$ref": "#/components/schemas/BinaryDownload" } } } } }
+      }
+    },
+    "/v1/identity/ine/nullifier-prover.zkey": {
+      "get": {
+        "tags": ["ZKP"],
+        "summary": "Download the nullifier proof zkey artifact.",
+        "responses": { "200": { "description": "zkey artifact.", "content": { "application/octet-stream": { "schema": { "$ref": "#/components/schemas/BinaryDownload" } } } } }
+      }
+    },
+    "/v1/issuers": {
+      "get": {
+        "tags": ["Issuers"],
+        "summary": "List supported credential issuers.",
+        "responses": {
+          "200": { "description": "Issuers.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TrustedIssuer" } } } } }
+        }
+      }
+    },
+    "/v1/karma/earn": {
+      "post": {
+        "tags": ["Karma"],
+        "summary": "Record anonymous karma.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Karma recorded.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/karma/me": {
+      "get": {
+        "tags": ["Karma"],
+        "summary": "Return current session karma summary.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Karma summary.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/karma/{profileId}": {
+      "get": {
+        "tags": ["Karma"],
+        "summary": "Return public karma summary for a profile.",
+        "parameters": [{ "name": "profileId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Karma profile summary.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } }
+        }
+      }
+    },
+    "/v1/karma/revelation": {
+      "put": {
+        "tags": ["Karma"],
+        "summary": "Update karma revelation preferences.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "200": { "description": "Updated revelation preferences.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/ledger": {
+      "get": {
+        "tags": ["Ledger"],
+        "summary": "Return consent ledger, grants, and proof audit summary.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Ledger summary.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/communities": {
+      "get": {
+        "tags": ["Communities"],
+        "summary": "List communities.",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending_admins", "active", "dissolved"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Communities list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Create a new community.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "201": { "description": "Created community.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/communities/{id}": {
+      "get": {
+        "tags": ["Communities"],
+        "summary": "Get community details.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Community details.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/admins": {
+      "get": {
+        "tags": ["Communities"],
+        "summary": "List community admins.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Admin list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Propose adding a new admin.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "202": { "description": "Admin addition proposed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an admin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/bootstrap-admins": {
+      "post": {
+        "tags": ["Communities"],
+        "summary": "One-time pending community admin bootstrap.",
+        "description": "Available only before community activation. Once used, future admin changes must go through governance actions.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["adminDids"],
+                "properties": {
+                  "adminDids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Bootstrap completed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an active admin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "Bootstrap already used or community already active.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/communities/{id}/admins/{did}": {
+      "delete": {
+        "tags": ["Communities"],
+        "summary": "Propose removing an admin.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "did", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "202": { "description": "Admin removal proposed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an admin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/actions": {
+      "get": {
+        "tags": ["Communities"],
+        "summary": "List community actions.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending", "approved", "rejected", "executed", "failed"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Actions list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Propose a governance action.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+        "responses": {
+          "201": { "description": "Action proposed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an admin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/communities/{id}/actions/{actionId}": {
+      "get": {
+        "tags": ["Communities"],
+        "summary": "Get action details with votes.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "actionId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Action details.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Action not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/actions/{actionId}/vote": {
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Vote irreversibly on a governance action.",
+        "description": "The signature is an Ed25519 signature over the canonical community vote payload. One admin DID can vote once per action.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "actionId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["vote", "signature", "signedAt", "nonce"],
+                "properties": {
+                  "vote": { "type": "string", "enum": ["approve", "reject"] },
+                  "signature": { "type": "string", "description": "Base64url Ed25519 signature over the canonical vote payload." },
+                  "signedAt": { "type": "string", "format": "date-time" },
+                  "nonce": { "type": "string", "description": "128-bit random nonce encoded as base64url." },
+                  "keyId": { "type": "string", "description": "Optional DID verification method id referenced by assertionMethod or authentication." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Vote recorded and action executed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "202": { "description": "Vote recorded, awaiting more approvals.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an admin, unknown voting key, or invalid vote signature.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Action not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "Already voted or action not pending.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "description": "DID resolution failed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/communities/{id}/memberships": {
+      "get": {
+        "tags": ["Communities"],
+        "summary": "List community memberships.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending", "active", "suspended", "left"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Memberships list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Request membership in a community.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "201": { "description": "Membership request submitted.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Community not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "Membership already exists.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/memberships/{did}/approve": {
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Approve a pending membership.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "did", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Membership approved.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an admin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Community or membership not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/memberships/{did}/reject": {
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Reject a pending membership.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "did", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Membership rejected.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Not an admin.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "404": { "description": "Community or membership not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/communities/{id}/memberships/leave": {
+      "post": {
+        "tags": ["Communities"],
+        "summary": "Leave a community.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Left community.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Community or membership not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/.well-known/did.json": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Resolve a did:web DID document for a community.",
+        "parameters": [{ "name": "community", "in": "query", "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "DID document (application/did+json).", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "404": { "description": "DID document not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    }
+  },
+
+  "x-m8-types": {
+    "package": "@para/m8-types",
+    "status": "unresolved",
+    "registryCheck": "npm returned E404 for https://registry.npmjs.org/@para%2fm8-types in this environment, so this contract keeps local schemas until the private registry or package source is configured."
+  }
+}

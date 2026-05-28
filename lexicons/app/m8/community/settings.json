@@ -1,0 +1,23 @@
+{
+  "lexicon": 1,
+  "id": "app.m8.community.settings",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Community settings and metadata.",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["name", "createdAt"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 200 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "status": { "type": "ref", "ref": "app.m8.community.defs#communityStatus" },
+          "politicalCompass": { "type": "ref", "ref": "app.m8.community.defs#politicalCompass" },
+          "createdAt": { "type": "string", "format": "datetime" },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

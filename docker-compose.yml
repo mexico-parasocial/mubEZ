@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  mubez:
+    build: .
+    container_name: mubez
+    ports:
+      - "8787:8787"
+    environment:
+      - NODE_ENV=development
+      - PORT=8787
+      - HOST=0.0.0.0
+      - DATABASE_PATH=/app/data/mubez.db
+      - DATABASE_AUTOMIGRATE=true
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-do-not-use-in-production-change-me-now}
+      - APP_KEY=${APP_KEY:-dev-app-key-16-chars}
+      - COOKIE_SECRET=${COOKIE_SECRET:-dev-cookie-secret-16-chars}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - PARA_API_BASE_URL=${PARA_API_BASE_URL:-}
+      - SECURITY_HEADERS_ENABLED=true
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_COMMUNITY_READ_MAX=${RATE_LIMIT_COMMUNITY_READ_MAX:-120}
+      - RATE_LIMIT_COMMUNITY_MUTATION_MAX=${RATE_LIMIT_COMMUNITY_MUTATION_MAX:-20}
+      - RATE_LIMIT_COMMUNITY_VOTE_MAX=${RATE_LIMIT_COMMUNITY_VOTE_MAX:-30}
+    volumes:
+      - mubez-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  mubez-data:

@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: corepack enable
+      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: corepack enable
+      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Verify build artifacts exist
+        run: test -f build/bin/server.js
+
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: corepack enable
+      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx --test tests/unit/**/*.test.ts
+
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: corepack enable
+      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx --test --test-force-exit tests/integration/**/*.test.ts
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t mubez:ci .
+      - name: Run container smoke test
+        run: |
+          docker run -d \
+            --name mubez-smoke \
+            -p 8787:8787 \
+            -e JWT_SECRET=ci-jwt-secret-min-32-characters-long \
+            -e APP_KEY=ci-app-key-exactly-16 \
+            -e COOKIE_SECRET=ci-cookie-secret-16 \
+            -e NODE_ENV=production \
+            -e DATABASE_AUTOMIGRATE=true \
+            -e SECURITY_HEADERS_ENABLED=true \
+            -e RATE_LIMIT_ENABLED=true \
+            mubez:ci
+          sleep 8
+          curl -sf http://localhost:8787/v1/health || (docker logs mubez-smoke && exit 1)
+          docker stop mubez-smoke
+          docker rm mubez-smoke

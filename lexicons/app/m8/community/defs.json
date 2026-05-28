@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "app.m8.community.defs",
+  "defs": {
+    "communityStatus": {
+      "type": "string",
+      "enum": ["pending_admins", "active", "dissolved"]
+    },
+    "membershipStatus": {
+      "type": "string",
+      "enum": ["pending", "active", "suspended", "left"]
+    },
+    "politicalCompass": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number", "minimum": -10, "maximum": 10 },
+        "y": { "type": "number", "minimum": -10, "maximum": 10 }
+      }
+    }
+  }
+}

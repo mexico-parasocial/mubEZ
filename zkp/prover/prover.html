@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PARA ZKP Prover</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .container {
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 16px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 700;
+      color: white;
+    }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    p { color: #888; font-size: 14px; margin-bottom: 32px; }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #2a2a3a;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status { font-size: 14px; color: #aaa; }
+    .error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      margin-top: 16px;
+    }
+    .success {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #22c55e;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">P</div>
+    <h1>Generating ZKP</h1>
+    <p>Your device is creating a zero-knowledge proof locally. No data leaves this screen.</p>
+    <div class="spinner" id="spinner"></div>
+    <div class="status" id="status">Loading prover...</div>
+  </div>
+
+  <script src="https://unpkg.com/snarkjs@0.7.6/build/snarkjs.min.js"></script>
+  <script>
+    (async function() {
+      const status = document.getElementById('status');
+      const spinner = document.getElementById('spinner');
+
+      function postMessage(data) {
+        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(JSON.stringify(data));
+        } else if (window.parent !== window) {
+          window.parent.postMessage({ type: 'para-zkp-result', ...data }, '*');
+        } else {
+          console.log('ZKP Result:', data);
+        }
+      }
+
+      function showError(msg) {
+        status.textContent = 'Failed';
+        spinner.style.display = 'none';
+        const errDiv = document.createElement('div');
+        errDiv.className = 'error';
+        errDiv.textContent = msg;
+        document.querySelector('.container').appendChild(errDiv);
+        postMessage({ success: false, error: msg });
+      }
+
+      function showSuccess(msg) {
+        status.textContent = 'Done';
+        spinner.style.display = 'none';
+        const okDiv = document.createElement('div');
+        okDiv.className = 'success';
+        okDiv.textContent = msg;
+        document.querySelector('.container').appendChild(okDiv);
+      }
+
+      // Parse query parameters
+      const params = new URLSearchParams(location.search);
+      const circuit = params.get('circuit') || 'ine_age_proof';
+      const birthYear = parseInt(params.get('birthYear'), 10);
+      const salt = parseInt(params.get('salt'), 10);
+      const currentYear = parseInt(params.get('currentYear'), 10);
+      const ageThreshold = parseInt(params.get('ageThreshold'), 10);
+      const communityId = parseInt(params.get('communityId'), 10);
+      const baseUrl = params.get('baseUrl') || '';
+
+      if (!birthYear || !salt || !currentYear || !ageThreshold) {
+        showError('Missing parameters: birthYear, salt, currentYear, ageThreshold');
+        return;
+      }
+
+      if (circuit === 'nullifier_proof' && !communityId) {
+        showError('Missing parameter: communityId for nullifier proof');
+        return;
+      }
+
+      const wasmUrl = `${baseUrl}/identity/ine/${circuit === 'nullifier_proof' ? 'nullifier' : 'zkp'}-prover.wasm`;
+      const zkeyUrl = `${baseUrl}/identity/ine/${circuit === 'nullifier_proof' ? 'nullifier' : 'zkp'}-prover.zkey`;
+
+      try {
+        status.textContent = 'Generating proof (this may take 2-5 seconds)...';
+
+        const input = {
+          birthYear,
+          salt,
+          currentYear,
+          ageThreshold,
+          ...(circuit === 'nullifier_proof' ? { communityId } : {}),
+        };
+
+        const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+          input,
+          wasmUrl,
+          zkeyUrl
+        );
+
+        showSuccess('Proof generated successfully');
+        postMessage({
+          success: true,
+          proof,
+          publicSignals,
+          commitment: publicSignals[0],
+          nullifier: circuit === 'nullifier_proof' ? publicSignals[1] : undefined,
+        });
+      } catch (err) {
+        showError(err.message || 'Proof generation failed');
+      }
+    })();
+  </script>
+</body>
+</html>
