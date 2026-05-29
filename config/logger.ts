@@ -8,7 +8,7 @@ const loggerConfig = defineConfig<{ app: LoggerConfig }>({
   loggers: {
     app: {
       enabled: true,
-      name: 'muvis',
+      name: 'mubez',
       level: env.get('LOG_LEVEL'),
       destination: !app.inProduction ? await syncDestination() : undefined,
       transport: {
