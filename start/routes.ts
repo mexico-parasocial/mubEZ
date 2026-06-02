@@ -25,6 +25,7 @@ router
     router.get('/issuers', '#controllers/issuers_controller.index')
 
     router.get('/anonymous/public-contact', '#controllers/anonymous_controller.publicContact')
+    router.get('/pajareo/representatives/:representativeId', '#controllers/pajareo_controller.representative')
 
     router.get('/karma/:profileId', '#controllers/karma_controller.show')
 
@@ -55,6 +56,12 @@ router
         router.get('/anonymous/public-contact/eligibility', '#controllers/anonymous_controller.publicContactEligibility')
         router.get('/device-trust/me', '#controllers/anonymous_controller.deviceTrust')
         router.post('/device-trust/development/verify', '#controllers/anonymous_controller.verifyDevelopmentDevice')
+
+        router.get('/pajareo/representatives/:representativeId/me', '#controllers/pajareo_controller.representativeMe')
+        router.post('/pajareo/representatives/:representativeId/entries', '#controllers/pajareo_controller.createEntry')
+        router.post('/pajareo/entries/:entryId/responses', '#controllers/pajareo_controller.createResponse')
+        router.post('/pajareo/entries/:entryId/support', '#controllers/pajareo_controller.support')
+        router.post('/pajareo/entries/:entryId/report', '#controllers/pajareo_controller.report')
 
         router.post('/identity/request', '#controllers/identity_wallet_controller.request')
         router.post('/identity/present', '#controllers/identity_wallet_controller.present')

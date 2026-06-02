@@ -9,6 +9,7 @@ export enum Features {
   LocalTrustPolicyEnable = 'm8:local_trust_policy:enable',
   DevelopmentDeviceTrustEnable = 'm8:development_device_trust:enable',
   CommunityPdsAuthTokenFallbackEnable = 'm8:community:pds_auth_token_fallback:enable',
+  PajareoEnable = 'm8:pajareo:enable',
 }
 
 const nonProductionDefault = env.get('NODE_ENV') !== 'production'
@@ -21,6 +22,7 @@ const defaultFeatureValues: Record<Features, boolean> = {
   [Features.LocalTrustPolicyEnable]: nonProductionDefault,
   [Features.DevelopmentDeviceTrustEnable]: nonProductionDefault,
   [Features.CommunityPdsAuthTokenFallbackEnable]: nonProductionDefault,
+  [Features.PajareoEnable]: false,
 }
 
 function toGrowthBookFeatures(values: Record<Features, boolean>): Record<string, FeatureDefinition<boolean>> {

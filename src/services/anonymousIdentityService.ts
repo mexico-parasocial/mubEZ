@@ -143,6 +143,25 @@ export function createAnonymousIdentity(sessionId: string, input: {
   return requireAnonymousIdentity(sessionId, id)
 }
 
+export function ensurePajareoIdentity(sessionId: string): AnonymousIdentityCard {
+  const db = getDb()
+  const existing = db.prepare(`
+    SELECT * FROM anonymous_identities
+    WHERE session_id = ?
+      AND community_uri = 'm8:pajareo'
+      AND status = 'active'
+    ORDER BY created_at ASC
+    LIMIT 1
+  `).get(sessionId) as Record<string, unknown> | undefined
+  if (existing) return hydrateIdentityCard(sessionId, existing)
+
+  return createAnonymousIdentity(sessionId, {
+    displayName: `Pajareo #${randomBytes(3).toString('hex').toUpperCase()}`,
+    surface: 'civic',
+    communityUri: 'm8:pajareo',
+  })
+}
+
 export function updateAnonymousIdentity(sessionId: string, identityId: string, input: {
   displayName?: string
   status?: AnonymousIdentityStatus
