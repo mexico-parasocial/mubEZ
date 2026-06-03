@@ -4,6 +4,21 @@ import { ensurePajareoIdentity, linkAnonymousPost } from './anonymousIdentitySer
 
 export type PajareoEntryType = 'firma' | 'pregunta' | 'señal' | 'testimonio'
 export type PajareoResponseKind = 'public' | 'official'
+export type PajareoSubjectKind = 'person' | 'institution' | 'person_in_institution'
+export type PajareoJurisdictionLevel = 'zone' | 'state' | 'nation' | 'representative_area'
+
+export interface PajareoSubject {
+  kind: PajareoSubjectKind
+  personId: string | null
+  personName: string | null
+  institutionId: string | null
+  institutionName: string | null
+}
+
+export interface PajareoJurisdiction {
+  level: PajareoJurisdictionLevel
+  label: string
+}
 
 export interface PajareoOfficialResponse {
   id: string
@@ -33,6 +48,8 @@ export interface PajareoResponse {
 export interface PajareoEntry {
   id: string
   representativeId: string
+  subject: PajareoSubject
+  jurisdiction: PajareoJurisdiction
   type: PajareoEntryType
   body: string
   anonymousDisplayArea: string
@@ -132,24 +149,35 @@ export function createPajareoEntry(sessionId: string, input: {
   representativeId: string
   type: PajareoEntryType
   body: string
+  subject?: Partial<PajareoSubject>
+  jurisdiction?: Partial<PajareoJurisdiction>
 }): PajareoEntry {
   const db = getDb()
   const identity = ensurePajareoIdentity(sessionId)
   const id = `pajareo-${randomUUID()}`
   const now = new Date().toISOString()
   const areaLabel = areaLabelForRepresentative(input.representativeId)
+  const subject = normalizeSubject(input.representativeId, input.subject)
+  const jurisdiction = normalizeJurisdiction(areaLabel, input.jurisdiction)
 
   db.prepare(`
     INSERT INTO pajareo_entries
-      (id, representative_id, anonymous_identity_id, entry_type, body, anonymous_display_area, status, support_count, report_count, response_count, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'visible', ?, 0, 0, ?, ?)
+      (id, representative_id, subject_kind, subject_id, subject_name, institution_id, institution_name, jurisdiction_level, jurisdiction_label, anonymous_identity_id, entry_type, body, anonymous_display_area, status, support_count, report_count, response_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'visible', ?, 0, 0, ?, ?)
   `).run(
     id,
     input.representativeId,
+    subject.kind,
+    subject.personId,
+    subject.personName,
+    subject.institutionId,
+    subject.institutionName,
+    jurisdiction.level,
+    jurisdiction.label,
     identity.id,
     input.type,
     input.body,
-    `Persona verificada de ${areaLabel}`,
+    `Persona verificada de ${jurisdiction.label}`,
     input.type === 'firma' ? 1 : 0,
     now,
     now,
@@ -164,6 +192,8 @@ export function createPajareoEntry(sessionId: string, input: {
   writeLedger(sessionId, 'PajareoEntryCreated', 'pajareo_entry', id, {
     representativeId: input.representativeId,
     type: input.type,
+    subject,
+    jurisdiction,
   })
 
   return requireEntry(id)
@@ -273,6 +303,7 @@ function requireResponseRow(responseId: string): Record<string, unknown> {
 
 function mapEntry(row: Record<string, unknown>): PajareoEntry {
   const representativeId = row.representative_id as string
+  const subjectKind = (row.subject_kind as PajareoSubjectKind | undefined) ?? 'person'
   const responses = getDb().prepare(`
     SELECT * FROM pajareo_responses
     WHERE entry_id = ?
@@ -284,6 +315,17 @@ function mapEntry(row: Record<string, unknown>): PajareoEntry {
   return {
     id: row.id as string,
     representativeId,
+    subject: {
+      kind: subjectKind,
+      personId: (row.subject_id as string | null | undefined) ?? (subjectKind === 'institution' ? null : representativeId),
+      personName: (row.subject_name as string | null | undefined) ?? null,
+      institutionId: (row.institution_id as string | null | undefined) ?? null,
+      institutionName: (row.institution_name as string | null | undefined) ?? null,
+    },
+    jurisdiction: {
+      level: (row.jurisdiction_level as PajareoJurisdictionLevel | undefined) ?? 'representative_area',
+      label: (row.jurisdiction_label as string | undefined) ?? areaLabelForRepresentative(representativeId),
+    },
     type: row.entry_type as PajareoEntryType,
     body: row.body as string,
     anonymousDisplayArea: row.anonymous_display_area as string,
@@ -324,6 +366,60 @@ function mapResponse(row: Record<string, unknown>, representativeId: string): Pa
     controllerHash: row.official_controller_hash as string | null,
     createdAt: row.created_at as string,
   }
+}
+
+function normalizeSubject(
+  representativeId: string,
+  subject?: Partial<PajareoSubject>,
+): PajareoSubject {
+  const kind = subject?.kind ?? 'person'
+  const explicitPersonId = normalizeNullableText(subject?.personId)
+  const explicitPersonName = normalizeNullableText(subject?.personName)
+  const explicitInstitutionId = normalizeNullableText(subject?.institutionId)
+  const explicitInstitutionName = normalizeNullableText(subject?.institutionName)
+  const personId = explicitPersonId ?? (kind === 'institution' ? null : representativeId)
+
+  if (kind === 'institution') {
+    return {
+      kind,
+      personId: null,
+      personName: null,
+      institutionId: explicitInstitutionId,
+      institutionName: explicitInstitutionName,
+    }
+  }
+
+  if (kind === 'person_in_institution') {
+    return {
+      kind,
+      personId,
+      personName: explicitPersonName,
+      institutionId: explicitInstitutionId,
+      institutionName: explicitInstitutionName,
+    }
+  }
+
+  return {
+    kind: 'person',
+    personId,
+    personName: explicitPersonName,
+    institutionId: null,
+    institutionName: null,
+  }
+}
+
+function normalizeNullableText(value: string | null | undefined) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function normalizeJurisdiction(
+  representativeAreaLabel: string,
+  jurisdiction?: Partial<PajareoJurisdiction>,
+): PajareoJurisdiction {
+  const level = jurisdiction?.level ?? 'representative_area'
+  const label = jurisdiction?.label?.trim() || (level === 'nation' ? 'México' : representativeAreaLabel)
+  return { level, label }
 }
 
 function areaLabelForRepresentative(representativeId: string) {

@@ -81,6 +81,38 @@ describe('Pajareo integration', () => {
     assert.equal(serialized.includes('nullifier'), false)
   })
 
+  it('stores institution targets and geographic specificity on public entries', async () => {
+    const created = await authed('POST', '/v1/pajareo/representatives/gov_nl_1/entries', accessToken, {
+      type: 'testimonio',
+      body: 'Hay fallas recurrentes en la atención regional.',
+      subject: {
+        kind: 'institution',
+        institutionId: 'institution:salud-nuevo-leon',
+        institutionName: 'Secretaría de Salud de Nuevo León',
+      },
+      jurisdiction: {
+        level: 'state',
+        label: 'Nuevo León',
+      },
+    })
+    assert.equal(created.statusCode, 201)
+    const entry = JSON.parse(created.payload).entry
+    assert.equal(entry.subject.kind, 'institution')
+    assert.equal(entry.subject.personId, null)
+    assert.equal(entry.subject.institutionName, 'Secretaría de Salud de Nuevo León')
+    assert.equal(entry.jurisdiction.level, 'state')
+    assert.equal(entry.jurisdiction.label, 'Nuevo León')
+    assert.equal(entry.anonymousDisplayArea, 'Persona verificada de Nuevo León')
+
+    const feed = await app.inject({
+      method: 'GET',
+      url: '/v1/pajareo/representatives/gov_nl_1',
+    })
+    const hydrated = JSON.parse(feed.payload).entries.find((item: Record<string, unknown>) => item.id === entry.id)
+    assert.equal(hydrated.subject.institutionName, 'Secretaría de Salud de Nuevo León')
+    assert.equal(hydrated.jurisdiction.label, 'Nuevo León')
+  })
+
   it('creates a new active Pajareo card when the previous isolated card is archived', async () => {
     const identities = await authed('GET', '/v1/anonymous/identities', accessToken)
     const pajareoCard = JSON.parse(identities.payload).identities.find(

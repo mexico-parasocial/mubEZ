@@ -18,6 +18,7 @@
     { "name": "Claims" },
     { "name": "Providers" },
     { "name": "Anonymous" },
+    { "name": "Pajareo" },
     { "name": "Device Trust" },
     { "name": "Identity" },
     { "name": "Civic Voting" },
@@ -78,7 +79,8 @@
         "type": "object",
         "required": ["identifier"],
         "properties": {
-          "identifier": { "type": "string", "minLength": 1, "maxLength": 256 }
+          "identifier": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "surface": { "$ref": "#/components/schemas/Surface" }
         }
       },
       "SessionStartAttempt": {
@@ -122,6 +124,98 @@
           "displayName": { "type": "string" },
           "avatarSeed": { "type": "string" },
           "createdAt": { "type": "string" }
+        }
+      },
+      "PajareoSubject": {
+        "type": "object",
+        "required": ["kind", "personId", "personName", "institutionId", "institutionName"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["person", "institution", "person_in_institution"] },
+          "personId": { "type": ["string", "null"] },
+          "personName": { "type": ["string", "null"] },
+          "institutionId": { "type": ["string", "null"] },
+          "institutionName": { "type": ["string", "null"] }
+        }
+      },
+      "PajareoJurisdiction": {
+        "type": "object",
+        "required": ["level", "label"],
+        "properties": {
+          "level": { "type": "string", "enum": ["zone", "state", "nation", "representative_area"] },
+          "label": { "type": "string" }
+        }
+      },
+      "PajareoResponse": {
+        "type": "object",
+        "required": ["id", "entryId", "representativeId", "kind", "responderDid", "body", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "entryId": { "type": "string" },
+          "representativeId": { "type": "string" },
+          "kind": { "type": "string", "enum": ["public", "official"] },
+          "responderDid": { "type": "string" },
+          "responderDisplayName": { "type": ["string", "null"] },
+          "entityId": { "type": ["string", "null"] },
+          "entityName": { "type": ["string", "null"] },
+          "body": { "type": "string" },
+          "controllerHash": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PajareoOfficialResponse": {
+        "type": "object",
+        "required": ["id", "entryId", "representativeId", "entityId", "entityName", "body", "controllerHash", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "entryId": { "type": "string" },
+          "representativeId": { "type": "string" },
+          "entityId": { "type": "string" },
+          "entityName": { "type": "string" },
+          "body": { "type": "string" },
+          "controllerHash": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PajareoEntry": {
+        "type": "object",
+        "required": ["id", "representativeId", "subject", "jurisdiction", "type", "body", "anonymousDisplayArea", "supportCount", "reportCount", "responseCount", "questionAnswered", "responses", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "representativeId": { "type": "string" },
+          "subject": { "$ref": "#/components/schemas/PajareoSubject" },
+          "jurisdiction": { "$ref": "#/components/schemas/PajareoJurisdiction" },
+          "type": { "type": "string", "enum": ["firma", "pregunta", "señal", "testimonio"] },
+          "body": { "type": "string" },
+          "anonymousDisplayArea": { "type": "string", "description": "Public-safe author area label. Does not expose identity id, session id, source DID, proof ids, or nullifier data." },
+          "supportCount": { "type": "integer", "minimum": 0 },
+          "reportCount": { "type": "integer", "minimum": 0 },
+          "responseCount": { "type": "integer", "minimum": 0 },
+          "questionAnswered": { "type": "boolean" },
+          "officialResponse": { "$ref": "#/components/schemas/PajareoOfficialResponse" },
+          "responses": { "type": "array", "items": { "$ref": "#/components/schemas/PajareoResponse" } },
+          "status": { "type": "string", "enum": ["visible", "removed"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PajareoFeed": {
+        "type": "object",
+        "required": ["representativeId", "entries"],
+        "properties": {
+          "representativeId": { "type": "string" },
+          "entries": { "type": "array", "items": { "$ref": "#/components/schemas/PajareoEntry" } },
+          "eligibility": { "$ref": "#/components/schemas/GenericObject" },
+          "pajareoIdentity": { "$ref": "#/components/schemas/GenericObject" }
+        }
+      },
+      "PajareoEntryInput": {
+        "type": "object",
+        "required": ["type", "body"],
+        "properties": {
+          "type": { "type": "string", "enum": ["firma", "pregunta", "señal", "testimonio"] },
+          "body": { "type": "string", "minLength": 1, "maxLength": 3000 },
+          "subject": { "$ref": "#/components/schemas/PajareoSubject" },
+          "jurisdiction": { "$ref": "#/components/schemas/PajareoJurisdiction" }
         }
       },
       "SessionStartResponse": {
@@ -169,12 +263,14 @@
       "ClaimType": {
         "type": "string",
         "enum": [
+          "is_verified_public_figure",
+          "is_civic_eligible",
           "has_para_verification",
-          "age_over_18",
-          "age_over_21",
-          "party_membership",
-          "party_tenure",
-          "pds_backup_coverage"
+          "has_party_affiliation_match",
+          "joined_during_founding_period",
+          "has_continuous_party_membership_30d",
+          "is_age_eligible",
+          "has_backup_coverage"
         ]
       },
       "DisclosureMode": {
@@ -786,6 +882,88 @@
           "200": { "description": "Eligible contact result.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
           "403": { "description": "Sender does not meet contact requirement.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericObject" } } } },
           "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/pajareo/representatives/{representativeId}": {
+      "get": {
+        "tags": ["Pajareo"],
+        "summary": "Return public Pajareo entries for a representative or public subject anchor.",
+        "description": "Public entries include subject and geographic specificity but never expose citizen author identity ids, session ids, proof artifact ids, source DIDs, or nullifier data.",
+        "parameters": [{ "name": "representativeId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Public Pajareo feed. If the feature is disabled, entries may be empty.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PajareoFeed" } } } }
+        }
+      }
+    },
+    "/v1/pajareo/representatives/{representativeId}/me": {
+      "get": {
+        "tags": ["Pajareo"],
+        "summary": "Return viewer-aware Pajareo feed and isolated Pajareo card summary.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "representativeId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Viewer Pajareo feed with eligibility and isolated Pajareo identity summary.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PajareoFeed" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Pajareo feature disabled.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/pajareo/representatives/{representativeId}/entries": {
+      "post": {
+        "tags": ["Pajareo"],
+        "summary": "Create a Pajareo entry through the dedicated isolated Pajareo identity.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "representativeId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PajareoEntryInput" } } } },
+        "responses": {
+          "201": { "description": "Created Pajareo entry.", "content": { "application/json": { "schema": { "type": "object", "required": ["entry"], "properties": { "entry": { "$ref": "#/components/schemas/PajareoEntry" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Pajareo feature disabled.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/pajareo/entries/{entryId}/responses": {
+      "post": {
+        "tags": ["Pajareo"],
+        "summary": "Create a public or server-validated official Pajareo response.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "entryId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["body"], "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 3000 } } } } } },
+        "responses": {
+          "201": { "description": "Created Pajareo response.", "content": { "application/json": { "schema": { "type": "object", "required": ["response"], "properties": { "response": { "$ref": "#/components/schemas/PajareoResponse" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Pajareo feature disabled or entry not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
+        }
+      }
+    },
+    "/v1/pajareo/entries/{entryId}/support": {
+      "post": {
+        "tags": ["Pajareo"],
+        "summary": "Idempotently support a Pajareo entry once per authenticated session.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "entryId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Updated entry counts.", "content": { "application/json": { "schema": { "type": "object", "required": ["entry"], "properties": { "entry": { "$ref": "#/components/schemas/PajareoEntry" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Pajareo feature disabled or entry not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/v1/pajareo/entries/{entryId}/report": {
+      "post": {
+        "tags": ["Pajareo"],
+        "summary": "Idempotently report a Pajareo entry once per authenticated session.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "entryId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "reason": { "type": "string", "maxLength": 500 } } } } } },
+        "responses": {
+          "200": { "description": "Updated entry counts.", "content": { "application/json": { "schema": { "type": "object", "required": ["entry"], "properties": { "entry": { "$ref": "#/components/schemas/PajareoEntry" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Pajareo feature disabled or entry not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "$ref": "#/components/responses/ValidationFailed" }
         }
       }
     },

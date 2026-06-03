@@ -14,6 +14,17 @@ import {
 const entrySchema = z.object({
   type: z.enum(['firma', 'pregunta', 'señal', 'testimonio']),
   body: z.string().min(1).max(3000),
+  subject: z.object({
+    kind: z.enum(['person', 'institution', 'person_in_institution']),
+    personId: z.string().max(200).nullable().optional(),
+    personName: z.string().max(200).nullable().optional(),
+    institutionId: z.string().max(200).nullable().optional(),
+    institutionName: z.string().max(200).nullable().optional(),
+  }).strict().optional(),
+  jurisdiction: z.object({
+    level: z.enum(['zone', 'state', 'nation', 'representative_area']),
+    label: z.string().min(1).max(200),
+  }).strict().optional(),
 }).strict()
 
 const responseSchema = z.object({
@@ -52,6 +63,8 @@ export default class PajareoController {
         representativeId: ctx.params.representativeId,
         type: body.type,
         body: body.body,
+        subject: body.subject,
+        jurisdiction: body.jurisdiction,
       }),
     })
   }
