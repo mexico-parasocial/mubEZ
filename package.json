@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "mubEZ — proof broker, credential wallet, and trust policy service for iM8",
   "type": "module",
-  "packageManager": "pnpm@8.15.9",
+  "packageManager": "pnpm@11.11.0",
   "main": "build/bin/server.js",
   "scripts": {
     "build": "node ace build",
@@ -46,7 +46,19 @@
     "typescript": "^5.7.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.18.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.18.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.11.0",
+      "onFail": "error"
+    }
   },
   "imports": {
     "#controllers/*": "./app/controllers/*.js",

@@ -21,7 +21,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: corepack enable
-      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
@@ -35,7 +35,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: corepack enable
-      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Verify build artifacts exist
@@ -51,7 +51,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: corepack enable
-      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx --test tests/unit/**/*.test.ts
 
@@ -65,7 +65,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: corepack enable
-      - run: corepack prepare pnpm@8.15.9 --activate
+      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx --test --test-force-exit tests/integration/**/*.test.ts
 

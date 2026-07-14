@@ -18,13 +18,13 @@ The iM8 Expo frontend is intentionally not included here. It lives in the separa
 ## Requirements
 
 - Node.js 22 or newer.
-- pnpm 8.15.9 through Corepack.
+- pnpm 11.11.0 through Corepack.
 
 ## Setup
 
 ```bash
 corepack enable
-corepack prepare pnpm@8.15.9 --activate
+corepack prepare pnpm@11.11.0 --activate
 pnpm install --frozen-lockfile
 cp .env.example .env
 pnpm db:migrate
