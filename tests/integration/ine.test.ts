@@ -100,11 +100,17 @@ describe('INE verification integration', () => {
     const verification = JSON.parse(verify.payload)
 
     const clientProof = await buildAgeProofs({ birthDate: extracted.birthDate, salt: 789123n, over21: false })
+    const me = await app.inject({
+      method: 'GET',
+      url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
+    const { issuanceChallenge } = JSON.parse(me.payload).session
     const res = await app.inject({
       method: 'POST',
       url: '/v1/identity/ine/credential',
       headers: { authorization: `Bearer ${accessToken}` },
-      payload: { extracted, verification, ageProofs: clientProof.ageProofs },
+      payload: { extracted, verification, issuanceChallenge, ageProofs: clientProof.ageProofs },
     })
 
     assert.equal(res.statusCode, 200)
@@ -146,6 +152,31 @@ describe('INE verification integration', () => {
     })
     assert.equal(first.response.statusCode, 200)
 
+    // Replaying the exact captured request (stale challenge) is rejected.
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/ine/credential',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        extracted: first.extracted,
+        verification: first.verification,
+        issuanceChallenge: first.issuanceChallenge,
+        ageProofs: first.clientProof.ageProofs,
+      },
+    })
+    assert.equal(replay.statusCode, 403)
+    assert.equal(JSON.parse(replay.payload).code, 'ISSUANCE_CHALLENGE_INVALID')
+
+    // The challenge rotated after the successful issuance.
+    const freshMe = await app.inject({
+      method: 'GET',
+      url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
+    const freshChallenge = JSON.parse(freshMe.payload).session.issuanceChallenge
+    assert.notEqual(freshChallenge, first.issuanceChallenge)
+
+    // With a fresh challenge, the same commitment is caught as a duplicate.
     const duplicate = await app.inject({
       method: 'POST',
       url: '/v1/identity/ine/credential',
@@ -153,6 +184,7 @@ describe('INE verification integration', () => {
       payload: {
         extracted: first.extracted,
         verification: first.verification,
+        issuanceChallenge: freshChallenge,
         ageProofs: first.clientProof.ageProofs,
       },
     })
@@ -161,6 +193,11 @@ describe('INE verification integration', () => {
 
     const tamperedSignals = [...first.clientProof.ageProofs.over18.publicSignals]
     tamperedSignals[0] = '12345678901234567890'
+    const meAgain = await app.inject({
+      method: 'GET',
+      url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
     const invalid = await app.inject({
       method: 'POST',
       url: '/v1/identity/ine/credential',
@@ -168,6 +205,7 @@ describe('INE verification integration', () => {
       payload: {
         extracted: first.extracted,
         verification: first.verification,
+        issuanceChallenge: JSON.parse(meAgain.payload).session.issuanceChallenge,
         ageProofs: {
           over18: { proof: first.clientProof.ageProofs.over18.proof, publicSignals: tamperedSignals },
         },

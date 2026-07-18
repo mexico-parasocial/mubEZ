@@ -112,8 +112,10 @@
         document.querySelector('.container').appendChild(okDiv);
       }
 
-      // Parse query parameters
-      const params = new URLSearchParams(location.search);
+      // Parse parameters from the URL fragment. Witness material (birthYear,
+      // salt) must never travel in the query string, where it would be sent
+      // to the server and written to access logs.
+      const params = new URLSearchParams(location.hash.slice(1));
       const circuit = params.get('circuit') || 'ine_age_proof';
       const birthYear = parseInt(params.get('birthYear'), 10);
       const salt = parseInt(params.get('salt'), 10);

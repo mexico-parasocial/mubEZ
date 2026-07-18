@@ -7,6 +7,7 @@ import { verifyAgeProof, isValidCommitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID } f
 import { hydrateSession } from '../../src/services/sessionService.js'
 import { createAnonymousProfile } from '../../src/services/anonymousProfileService.js'
 import { createIssuerSignedCredential } from '../../src/services/identityWallet.js'
+import { isValidIssuanceChallenge, rotateIssuanceChallenge } from '../../src/services/issuanceChallenge.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
 import { getSessionId, validateBody, t } from '#support/http'
 
@@ -18,6 +19,7 @@ const ageProofSchema = z.object({
 const ineCredentialSchema = z.object({
   extracted: z.record(z.unknown()),
   verification: z.record(z.unknown()),
+  issuanceChallenge: z.string().min(1),
   ageProofs: z.object({
     over18: ageProofSchema,
     over21: ageProofSchema.optional(),
@@ -84,6 +86,19 @@ export default class IneController {
 
     const body = validateBody(ctx, ineCredentialSchema)
     if (!body) return
+
+    // Replay protection: the issuance challenge is single-use. A wrong
+    // challenge is rejected without rotation (so an attacker cannot burn the
+    // legitimate one); a valid challenge is rotated immediately so this exact
+    // request can never be replayed.
+    if (!isValidIssuanceChallenge(sessionId, body.issuanceChallenge)) {
+      return ctx.response.status(403).send({
+        error: 'Invalid or expired issuance challenge',
+        code: 'ISSUANCE_CHALLENGE_INVALID',
+      })
+    }
+    rotateIssuanceChallenge(sessionId)
+
     const db = getDb()
     const $t = t(ctx)
     const extracted = body.extracted as import('../../src/types/index.js').IneExtractedData
@@ -155,7 +170,9 @@ export default class IneController {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           proofArtifactId, sessionId, grantId, 'ine-verification', 'has_para_verification', 'verified',
-          `${$t('ine.statement')}: ${extracted.fullName} (${extracted.curp.slice(0, 4)}****)`,
+          // No PII in stored statements: only the truncated curp_hash from
+          // the credential claims may be used to match an identity.
+          `${$t('ine.statement')} (${claims.curp_hash})`,
           'para.identity', 'PARA Identity', 'civic', 'active', issuedAt,
           expiresAt,
           revocationHash, commitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID,

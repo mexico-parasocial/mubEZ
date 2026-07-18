@@ -315,6 +315,7 @@ export type ProofBrokerSession = {
   activePersonaId: string
   activeSurfaceId: ProofBrokerSurfaceId
   oauthScope: string
+  issuanceChallenge?: string
   createdAt: string
   updatedAt: string
 }

@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TestApp } from '../helpers/testApp.js'
+import { issueIneCredentialWithClientProof } from '../helpers/clientProof.js'
 
 const tmpDir = mkdtempSync(join(tmpdir(), 'm8-civic-vote-test-'))
 process.env.DATABASE_PATH = join(tmpDir, 'civic-vote-test.db')
@@ -22,10 +23,42 @@ describe('civic vote identity integration', () => {
     })
     const body = JSON.parse(start.payload)
     accessToken = body.tokens.accessToken
+
+    // Vote nullifiers require proof-of-humanity: bind an INE credential.
+    const credential = await issueIneCredentialWithClientProof({
+      app,
+      accessToken,
+      inePhotoBase64: 'mock-civic-vote-ine',
+      selfieBase64: 'mock-civic-vote-selfie',
+    })
+    assert.equal(credential.response.statusCode, 200)
   })
 
   after(async () => {
     await app.close()
+  })
+
+  it('rejects vote proof issuance without an INE commitment', async () => {
+    const start = await app.inject({
+      method: 'POST',
+      url: '/v1/sessions/start',
+      payload: { identifier: 'unverified-voter.bsky.social' },
+    })
+    const unverifiedToken = JSON.parse(start.payload).tokens.accessToken
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${unverifiedToken}` },
+      payload: {
+        subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/abc',
+        subjectType: 'cabildeo',
+      },
+    })
+
+    assert.equal(res.statusCode, 403)
+    const body = JSON.parse(res.payload)
+    assert.equal(body.code, 'INE_COMMITMENT_REQUIRED')
   })
 
   it('issues a stable vote nullifier per person and subject', async () => {

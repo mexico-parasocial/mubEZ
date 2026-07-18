@@ -77,17 +77,27 @@ export async function issueIneCredentialWithClientProof(params: {
     over21: params.over21,
   })
 
+  // The credential endpoint requires the session's current issuance
+  // challenge (single-use, rotated after each attempt).
+  const me = await params.app.inject({
+    method: 'GET',
+    url: '/v1/sessions/me',
+    headers: { authorization: `Bearer ${params.accessToken}` },
+  })
+  const { issuanceChallenge } = JSON.parse(me.payload).session
+
   const credentialResponse = await params.app.inject({
     method: 'POST',
     url: '/v1/identity/ine/credential',
     headers: { authorization: `Bearer ${params.accessToken}` },
-    payload: { extracted, verification, ageProofs: clientProof.ageProofs },
+    payload: { extracted, verification, issuanceChallenge, ageProofs: clientProof.ageProofs },
   })
 
   return {
     extracted,
     verification,
     clientProof,
+    issuanceChallenge,
     response: credentialResponse,
     body: JSON.parse(credentialResponse.payload),
   }

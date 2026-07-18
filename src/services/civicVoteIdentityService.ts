@@ -80,6 +80,19 @@ export function issueCivicVoteProof(
   }
 
   const session = getSessionIdentity(sessionId)
+
+  // 1-person-1-vote is only meaningful when each person root is bound to a
+  // verified human. Require an active INE commitment (proof artifact with a
+  // ZK commitment) before issuing or reusing vote nullifiers — otherwise any
+  // number of throwaway sessions could each mint their own "person".
+  if (!hasActiveIneCommitment(sessionId)) {
+    throw appError(
+      'Identity verification (INE) is required before voting: no active identity commitment for this session',
+      403,
+      'INE_COMMITMENT_REQUIRED',
+    )
+  }
+
   const person = ensurePersonRoot(sessionId)
   if (person.status !== 'active') {
     throw appError('Person identity is not active', 403, 'PERSON_NOT_ACTIVE')
@@ -185,6 +198,25 @@ function ensurePersonRoot(sessionId: string): PersonRoot {
     VALUES (?, ?, 'active', ?, ?)
   `).run(id, sessionId, now, now)
   return { id, status: 'active' }
+}
+
+/**
+ * Proof-of-humanity for the session: an active INE proof artifact carrying a
+ * ZK commitment (written by POST /v1/identity/ine/credential).
+ */
+function hasActiveIneCommitment(sessionId: string): boolean {
+  const row = getDb()
+    .prepare(`
+      SELECT 1 AS found FROM proof_artifacts
+      WHERE session_id = ?
+        AND request_id = 'ine-verification'
+        AND outcome = 'verified'
+        AND status = 'active'
+        AND commitment IS NOT NULL
+      LIMIT 1
+    `)
+    .get(sessionId) as { found: number } | undefined
+  return row !== undefined
 }
 
 function ensureSessionAlias(personId: string, sessionId: string, session: SessionIdentity) {

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import env from '#start/env'
 import { getDb } from '../db/connection.js'
 import { resolveHandleToDid, resolvePdsEndpoint } from './didResolver.js'
+import { ensureIssuanceChallenge } from './issuanceChallenge.js'
 import { PROOF_BROKER_CLAIM_TYPES } from '../types/index.js'
 import { scopeForSurface } from './scopePolicy.js'
 import type {
@@ -266,6 +267,7 @@ export function buildSession(
     paraStatus,
     activePersonaId: row.active_persona_id as string,
     activeSurfaceId: row.active_surface_id as ProofBrokerSurfaceId,
+    issuanceChallenge: ensureIssuanceChallenge(sessionId),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }
