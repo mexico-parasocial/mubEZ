@@ -22,6 +22,12 @@ export interface AnonymousIdentityCard {
   surface: ProofBrokerSurfaceId
   communityUri: string | null
   status: AnonymousIdentityStatus
+  burnAfter: 'none' | 'post'
+  /**
+   * 'main': the followable default voice (folded legacy profile).
+   * 'burner': an isolated, unlinkable, never-followable identity.
+   */
+  tier: 'main' | 'burner'
   deviceTrust: DeviceTrustSummary
   proofBadges: PublicProofBadge[]
   posts: AnonymousIdentityPost[]
@@ -111,6 +117,7 @@ export function createAnonymousIdentity(sessionId: string, input: {
   displayName?: string
   surface?: ProofBrokerSurfaceId
   communityUri?: string | null
+  burnAfter?: 'none' | 'post'
 }): AnonymousIdentityCard {
   const db = getDb()
   const now = new Date().toISOString()
@@ -121,8 +128,8 @@ export function createAnonymousIdentity(sessionId: string, input: {
 
   db.prepare(`
     INSERT INTO anonymous_identities
-      (id, session_id, display_name, avatar_seed, nullifier_secret_hash, surface, community_uri, status, device_trust_state, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, session_id, display_name, avatar_seed, nullifier_secret_hash, surface, community_uri, status, burn_after, device_trust_state, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -132,6 +139,7 @@ export function createAnonymousIdentity(sessionId: string, input: {
     input.surface ?? 'civic',
     input.communityUri ?? null,
     'active',
+    input.burnAfter ?? 'none',
     getDeviceTrustSummary(sessionId).status,
     now,
     now,
@@ -139,6 +147,7 @@ export function createAnonymousIdentity(sessionId: string, input: {
   writeLedger(sessionId, 'AnonymousIdentityCreated', 'anonymous_identity', id, {
     surface: input.surface ?? 'civic',
     communityUri: input.communityUri ?? null,
+    burnAfter: input.burnAfter ?? 'none',
   })
   return requireAnonymousIdentity(sessionId, id)
 }
@@ -165,6 +174,7 @@ export function ensurePajareoIdentity(sessionId: string): AnonymousIdentityCard 
 export function updateAnonymousIdentity(sessionId: string, identityId: string, input: {
   displayName?: string
   status?: AnonymousIdentityStatus
+  burnAfter?: 'none' | 'post'
 }): AnonymousIdentityCard {
   requireAnonymousIdentityRow(sessionId, identityId)
   const db = getDb()
@@ -174,17 +184,18 @@ export function updateAnonymousIdentity(sessionId: string, identityId: string, i
 
   db.prepare(`
     UPDATE anonymous_identities
-    SET display_name = ?, status = ?, archived_at = ?, updated_at = ?
+    SET display_name = ?, status = ?, burn_after = ?, archived_at = ?, updated_at = ?
     WHERE id = ? AND session_id = ?
   `).run(
     input.displayName?.trim() || existing.displayName,
     status,
+    input.burnAfter ?? existing.burnAfter,
     archivedAt,
     new Date().toISOString(),
     identityId,
     sessionId,
   )
-  writeLedger(sessionId, 'AnonymousIdentityUpdated', 'anonymous_identity', identityId, { status })
+  writeLedger(sessionId, 'AnonymousIdentityUpdated', 'anonymous_identity', identityId, { status, burnAfter: input.burnAfter })
   return requireAnonymousIdentity(sessionId, identityId)
 }
 
@@ -194,7 +205,7 @@ export function linkAnonymousPost(sessionId: string, input: {
   communityUri?: string | null
   postType?: string
   stats?: Partial<Omit<AnonymousPostStats, 'syncedAt'>>
-}): AnonymousIdentityPost {
+}): { post: AnonymousIdentityPost; rotatedIdentity: AnonymousIdentityCard | null } {
   const db = getDb()
   const identity = input.identityId
     ? requireAnonymousIdentity(sessionId, input.identityId)
@@ -209,7 +220,7 @@ export function linkAnonymousPost(sessionId: string, input: {
     if (!ownsPost(sessionId, existing)) {
       throw appError('Anonymous post belongs to another session', 403, 'ANONYMOUS_POST_FORBIDDEN')
     }
-    return mapPost(existing)
+    return { post: mapPost(existing), rotatedIdentity: null }
   }
 
   const proofIds = listPublicProofBadges(sessionId).map((badge) => badge.id)
@@ -240,7 +251,26 @@ export function linkAnonymousPost(sessionId: string, input: {
     identityId: identity.id,
     postUri: input.postUri,
   })
-  return requireAnonymousPost(sessionId, id)
+
+  const post = requireAnonymousPost(sessionId, id)
+
+  // Burn-after lifecycle: a 'post'-burn identity is archived once it has
+  // spoken, and a fresh burner replaces it.
+  let rotatedIdentity: AnonymousIdentityCard | null = null
+  if (identity.burnAfter === 'post') {
+    updateAnonymousIdentity(sessionId, identity.id, { status: 'archived' })
+    rotatedIdentity = createAnonymousIdentity(sessionId, {
+      surface: identity.surface,
+      communityUri: identity.communityUri,
+      burnAfter: 'post',
+    })
+    writeLedger(sessionId, 'AnonymousIdentityBurned', 'anonymous_identity', identity.id, {
+      postUri: input.postUri,
+      replacementIdentityId: rotatedIdentity.id,
+    })
+  }
+
+  return { post, rotatedIdentity }
 }
 
 export function updateAnonymousPostStats(sessionId: string, postId: string, statsInput: Partial<Omit<AnonymousPostStats, 'syncedAt'>>): AnonymousIdentityPost {
@@ -412,14 +442,9 @@ export function requireAnonymousIdentity(sessionId: string, identityId: string):
 
 function ensureDefaultAnonymousIdentity(sessionId: string): AnonymousIdentityCard {
   const db = getDb()
-  const existing = db.prepare(`
-    SELECT * FROM anonymous_identities
-    WHERE session_id = ?
-    ORDER BY created_at ASC
-    LIMIT 1
-  `).get(sessionId) as Record<string, unknown> | undefined
-  if (existing) return hydrateIdentityCard(sessionId, existing)
 
+  // If a legacy default profile exists, its folded identity card must always
+  // exist too — even when the session created burner identities first.
   const legacy = db.prepare(`
     SELECT id, display_name, avatar_seed, nullifier_secret, created_at
     FROM anonymous_profiles
@@ -427,13 +452,17 @@ function ensureDefaultAnonymousIdentity(sessionId: string): AnonymousIdentityCar
   `).get(sessionId) as { id: string; display_name: string; avatar_seed: string; nullifier_secret: string; created_at: string } | undefined
 
   if (legacy) {
+    const foldedId = `anon-identity-${legacy.id}`
+    const folded = db.prepare('SELECT * FROM anonymous_identities WHERE id = ?').get(foldedId) as Record<string, unknown> | undefined
+    if (folded) return hydrateIdentityCard(sessionId, folded)
+
     const now = new Date().toISOString()
     db.prepare(`
       INSERT INTO anonymous_identities
         (id, session_id, display_name, avatar_seed, nullifier_secret_hash, surface, status, device_trust_state, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      `anon-identity-${legacy.id}`,
+      foldedId,
       sessionId,
       legacy.display_name,
       legacy.avatar_seed,
@@ -444,8 +473,16 @@ function ensureDefaultAnonymousIdentity(sessionId: string): AnonymousIdentityCar
       legacy.created_at,
       now,
     )
-    return requireAnonymousIdentity(sessionId, `anon-identity-${legacy.id}`)
+    return requireAnonymousIdentity(sessionId, foldedId)
   }
+
+  const existing = db.prepare(`
+    SELECT * FROM anonymous_identities
+    WHERE session_id = ?
+    ORDER BY created_at ASC
+    LIMIT 1
+  `).get(sessionId) as Record<string, unknown> | undefined
+  if (existing) return hydrateIdentityCard(sessionId, existing)
 
   return createAnonymousIdentity(sessionId, {})
 }
@@ -457,6 +494,14 @@ function hydrateIdentityCard(sessionId: string, row: Record<string, unknown>): A
     SELECT * FROM anonymous_identity_posts WHERE identity_id = ? ORDER BY created_at DESC
   `).all(id) as Record<string, unknown>[]
 
+  // Tier: a card is the followable "main voice" iff it is the folded legacy
+  // default profile (`anon-identity-<profileId>`); anything else is a burner.
+  const foldedProfile = id.startsWith('anon-identity-')
+    ? db
+        .prepare('SELECT id FROM anonymous_profiles WHERE id = ?')
+        .get(id.slice('anon-identity-'.length)) as { id: string } | undefined
+    : undefined
+
   return {
     id,
     displayName: row.display_name as string,
@@ -464,6 +509,8 @@ function hydrateIdentityCard(sessionId: string, row: Record<string, unknown>): A
     surface: row.surface as ProofBrokerSurfaceId,
     communityUri: row.community_uri as string | null,
     status: row.status as AnonymousIdentityStatus,
+    burnAfter: (row.burn_after as 'none' | 'post') ?? 'none',
+    tier: foldedProfile ? 'main' : 'burner',
     deviceTrust: getDeviceTrustSummary(sessionId),
     proofBadges: listPublicProofBadges(sessionId),
     posts: posts.map(mapPost),

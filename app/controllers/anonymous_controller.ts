@@ -14,6 +14,11 @@ import {
   updateAnonymousPostStats,
 } from '../../src/services/anonymousIdentityService.js'
 import { getDeviceTrustSummary, upsertDevelopmentTrustedDevice } from '../../src/services/deviceTrustService.js'
+import {
+  followAnonymousProfile,
+  getAnonymousProfilePublic,
+  unfollowAnonymousProfile,
+} from '../../src/services/anonymousFollowService.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
 
 const surfaceSchema = z.enum(['public', 'civic', 'dating'])
@@ -23,6 +28,7 @@ const createIdentitySchema = z
     displayName: z.string().min(1).max(80).optional(),
     surface: surfaceSchema.optional(),
     communityUri: z.string().min(1).max(512).nullable().optional(),
+    burnAfter: z.enum(['none', 'post']).optional(),
   })
   .strict()
 
@@ -30,6 +36,7 @@ const updateIdentitySchema = z
   .object({
     displayName: z.string().min(1).max(80).optional(),
     status: z.enum(['active', 'archived']).optional(),
+    burnAfter: z.enum(['none', 'post']).optional(),
   })
   .strict()
 
@@ -108,7 +115,8 @@ export default class AnonymousController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, linkPostSchema)
     if (!body) return
-    return ctx.response.status(201).send({ post: linkAnonymousPost(sessionId, body) })
+    const result = linkAnonymousPost(sessionId, body)
+    return ctx.response.status(201).send({ post: result.post, rotatedIdentity: result.rotatedIdentity })
   }
 
   async updatePostDmPolicy(ctx: HttpContext) {
@@ -143,6 +151,20 @@ export default class AnonymousController {
     return ctx.response.send(getAnonymousPublicContact(postUri))
   }
 
+  async showProfile(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    return ctx.response.send(getAnonymousProfilePublic(sessionId, ctx.params.id))
+  }
+
+  async followProfile(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    return ctx.response.send(followAnonymousProfile(sessionId, ctx.params.id))
+  }
+
+  async unfollowProfile(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    return ctx.response.send(unfollowAnonymousProfile(sessionId, ctx.params.id))
+  }
   async publicContactEligibility(ctx: HttpContext) {
     const sessionId = getSessionId(ctx)
 

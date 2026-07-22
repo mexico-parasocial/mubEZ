@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { HttpContext } from '@adonisjs/core/http'
 import { getDb } from '../../src/db/connection.js'
-import { verifyClaim } from '../../src/services/trustPolicy.js'
+import { verifyClaimRouted } from '../../src/services/claimVerification.js'
 import { PROOF_BROKER_CLAIM_TYPES } from '../../src/types/index.js'
 import { getSessionId, validateBody } from '#support/http'
 
@@ -23,7 +23,7 @@ export default class ClaimsController {
     const body = validateBody(ctx, verifyClaimSchema)
     if (!body) return
 
-    const result = verifyClaim({ sessionId, ...body })
+    const result = await verifyClaimRouted({ sessionId, ...body })
     const proofId = `proof-${randomUUID()}`
     const now = new Date().toISOString()
 
@@ -44,8 +44,8 @@ export default class ClaimsController {
         result.outcome,
         result.statement,
         body.proofMode,
-        body.verifierId,
-        body.verifierId,
+        result.verifierId,
+        result.verifierId,
         body.audienceAppId,
         body.audienceAppName,
         body.surface,

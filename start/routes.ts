@@ -27,8 +27,6 @@ router
     router.get('/anonymous/public-contact', '#controllers/anonymous_controller.publicContact')
     router.get('/pajareo/representatives/:representativeId', '#controllers/pajareo_controller.representative')
 
-    router.get('/karma/:profileId', '#controllers/karma_controller.show')
-
     // Protected routes
     router
       .group(() => {
@@ -53,6 +51,9 @@ router
         router.patch('/anonymous/posts/:id/stats', '#controllers/anonymous_controller.updatePostStats')
         router.post('/anonymous/identities/:id/germ/link', '#controllers/anonymous_controller.linkGerm')
         router.post('/anonymous/identities/:id/germ/unlink', '#controllers/anonymous_controller.unlinkGerm')
+        router.get('/anonymous/profiles/:id', '#controllers/anonymous_controller.showProfile')
+        router.post('/anonymous/profiles/:id/follow', '#controllers/anonymous_controller.followProfile')
+        router.delete('/anonymous/profiles/:id/follow', '#controllers/anonymous_controller.unfollowProfile')
         router.get('/anonymous/public-contact/eligibility', '#controllers/anonymous_controller.publicContactEligibility')
         router.get('/device-trust/me', '#controllers/anonymous_controller.deviceTrust')
         router.post('/device-trust/development/verify', '#controllers/anonymous_controller.verifyDevelopmentDevice')
@@ -107,5 +108,9 @@ router
         router.post('/communities/:id/memberships/leave', '#controllers/community/memberships_controller.leave')
       })
       .use(middleware.auth())
+
+    // Public parameterized routes come after the specific ones so they do
+    // not swallow them (e.g. /karma/me vs /karma/:profileId).
+    router.get('/karma/:profileId', '#controllers/karma_controller.show')
   })
   .prefix('/v1')

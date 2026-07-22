@@ -115,6 +115,8 @@ describe('GrowthBook safety gates', () => {
     })
     const proof = JSON.parse(approved.payload).proofs[0]
     assert.equal(proof.outcome, 'not-verified')
-    assert.match(proof.statement, /disabled/i)
+    // Civic eligibility is now derived from real proof-of-humanity; with no
+    // INE commitment and the demo policy disabled it fails closed.
+    assert.match(proof.statement, /No active INE identity commitment/i)
   })
 })

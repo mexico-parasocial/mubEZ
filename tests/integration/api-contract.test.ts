@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,8 +13,21 @@ function routeToOpenApiPath(route: string) {
   return route.replace(/:([A-Za-z0-9_]+)/g, '{$1}')
 }
 
+// Works from both the source layout (tests/integration) and the compiled
+// layout (build/tests/integration) used by `pnpm test`.
+function routesSourcePath() {
+  const candidates = [
+    new URL('../../start/routes.ts', import.meta.url),
+    new URL('../../../start/routes.ts', import.meta.url),
+  ]
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  throw new Error('start/routes.ts not found relative to ' + import.meta.url)
+}
+
 function expectedRoutesFromSource() {
-  const routes = readFileSync(new URL('../../start/routes.ts', import.meta.url), 'utf8')
+  const routes = readFileSync(routesSourcePath(), 'utf8')
   const rootRoutes = [...routes.matchAll(/router\.(get|post|patch|put|delete)\('([^']+)'/g)].map(
     (match) => routeToOpenApiPath(match[2])
   )

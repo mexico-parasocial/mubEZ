@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { HttpContext } from '@adonisjs/core/http'
 import { getDb } from '../../src/db/connection.js'
 import { getAnonymousProfile } from '../../src/services/anonymousProfileService.js'
+import { evaluateKarmaEarn } from '../../src/services/karmaService.js'
 import { getSessionId, validateBody } from '#support/http'
 import { getCommunity } from '../../src/services/communityService.js'
 
@@ -56,20 +57,43 @@ export default class KarmaController {
     }
 
     const id = `karma-${randomUUID()}`
-    getDb().prepare(`
-      INSERT INTO karma (id, anonymous_profile_id, community_id, action_type, points, detail_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      anon.id,
-      body.communityId ?? null,
-      body.actionType,
-      body.points ?? 1,
-      JSON.stringify(body.detail ?? {}),
-      new Date().toISOString(),
-    )
+    const detail = body.detail ?? {}
 
-    return ctx.response.send({ earned: true, id, points: body.points ?? 1 })
+    // Points are derived and verified server-side; any client-sent point
+    // value is ignored by design.
+    const evaluation = evaluateKarmaEarn(sessionId, body.actionType, detail)
+    if (!evaluation.ok) {
+      return ctx.response.status(evaluation.status).send({
+        error: evaluation.error,
+        code: evaluation.code,
+      })
+    }
+
+    try {
+      getDb().prepare(`
+        INSERT INTO karma (id, anonymous_profile_id, community_id, action_type, points, detail_json, subject_key, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        anon.id,
+        body.communityId ?? null,
+        body.actionType,
+        evaluation.points,
+        JSON.stringify(detail),
+        evaluation.subjectKey,
+        new Date().toISOString(),
+      )
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        return ctx.response.status(409).send({
+          error: 'Karma already awarded for this action',
+          code: 'KARMA_ALREADY_AWARDED',
+        })
+      }
+      throw error
+    }
+
+    return ctx.response.send({ earned: true, id, points: evaluation.points })
   }
 
   async me(ctx: HttpContext) {

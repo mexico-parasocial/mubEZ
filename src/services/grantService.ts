@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection.js'
 import { hydrateSession } from './sessionService.js'
-import { verifyClaim } from './trustPolicy.js'
+import { verifyClaimRouted } from './claimVerification.js'
 import type {
   ProofBrokerClaimSpec,
   ProofBrokerGrantApproveInput,
@@ -51,7 +51,7 @@ export function requestGrant(sessionId: string, input: ProofBrokerGrantRequestIn
   return { session, grant, proofs: [] }
 }
 
-export function approveGrant(sessionId: string, input: ProofBrokerGrantApproveInput): ProofBrokerGrantMutationResult {
+export async function approveGrant(sessionId: string, input: ProofBrokerGrantApproveInput): Promise<ProofBrokerGrantMutationResult> {
   const db = getDb()
   const now = nowIso()
 
@@ -63,7 +63,7 @@ export function approveGrant(sessionId: string, input: ProofBrokerGrantApproveIn
   const proofArtifacts: ProofBrokerProofArtifact[] = []
 
   for (const claim of requestedClaims) {
-    const verification = verifyClaim({
+    const verification = await verifyClaimRouted({
       sessionId,
       claimType: claim.type,
       requestedValue: claim.requestedValue,
@@ -90,7 +90,7 @@ export function approveGrant(sessionId: string, input: ProofBrokerGrantApproveIn
       verification.statement,
       claim.disclosure,
       'm8.broker',
-      'm8.broker',
+      verification.verifierId,
       grantRow.app_id,
       grantRow.app_name,
       grantRow.surface,
@@ -110,7 +110,7 @@ export function approveGrant(sessionId: string, input: ProofBrokerGrantApproveIn
       statement: verification.statement,
       proofMode: claim.disclosure,
       issuerId: 'm8.broker',
-      verifierId: 'm8.broker',
+      verifierId: verification.verifierId,
       audienceAppId: grantRow.app_id as string,
       audienceAppName: grantRow.app_name as string,
       surface: grantRow.surface as ProofBrokerSession['activeSurfaceId'],

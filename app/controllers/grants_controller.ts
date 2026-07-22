@@ -52,7 +52,7 @@ export default class GrantsController {
     const body = validateBody(ctx, approveGrantSchema)
     if (!body) return
 
-    return ctx.response.send(approveGrant(sessionId, { ...body, grantId: ctx.params.id }))
+    return ctx.response.send(await approveGrant(sessionId, { ...body, grantId: ctx.params.id }))
   }
 
   async revoke(ctx: HttpContext) {
