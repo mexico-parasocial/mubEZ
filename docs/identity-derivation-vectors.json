@@ -1,0 +1,86 @@
+{
+  "spec": "docs/IDENTITY_DERIVATION.md",
+  "version": 1,
+  "curve": "ristretto255",
+  "hash": "SHA-512 (little-endian, reduced mod l)",
+  "vectors": [
+    {
+      "seed": "0000000000000000000000000000000000000000000000000000000000000000",
+      "spendPriv": "841cc10abf2a62f73db5a63219e96c50a2c31c0803d7bff81e95b9b69a5f5d00",
+      "viewPriv": "1dc414fc40d3fe2a93643aee375cbe06e9810d4db6dd7be7b8cc2f1314868d0b",
+      "spendPub": "2cb63d80d8f1721bd5bb5f0f1286c5b35999e31f1de31e9ef3cced453fd3237f",
+      "identities": [
+        {
+          "index": 0,
+          "label": "public",
+          "priv": "433876fadae1cf7a81c8f6a0f2a1b24c6ed64c2f7afd90db23f5ac9a1ab9f30f",
+          "pub": "1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715"
+        },
+        {
+          "index": 1,
+          "label": "civic",
+          "priv": "eee63480142bfc39d5c4f5ede4e664b3f70606971eeece0db979dce9b5a59d0d",
+          "pub": "904070eeee5c39e01483c1361b88fe118ae344def5a6819a576ea27abf77cf6d"
+        },
+        {
+          "index": 2,
+          "label": "anonymous",
+          "priv": "cd3d21ae6688d363dcb5d1f517f62ff88ab3a8ea8107cd3c27335275f64a7b04",
+          "pub": "3e2e9c0aaf0527650e65026ccafce10f558a1a61dfae4b51b09df57332133525"
+        }
+      ]
+    },
+    {
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "spendPriv": "5865c3aff0151cb955dce2cc5cddf658587bdc9e8e6b928ae193171c314be50b",
+      "viewPriv": "56f9af5a22edb11910d560ac5da363ddd508e4cd3331a4c1849481b94ef64302",
+      "spendPub": "026d326a04c74466c8aaf73f4bd8ed22223bd6522bb6b3420c98e08599d80127",
+      "identities": [
+        {
+          "index": 0,
+          "label": "public",
+          "priv": "2854ad5b22d1f6672697ab6ef1fdf446c41f7a150b2875b7aa5371fdf0ef4807",
+          "pub": "90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65"
+        },
+        {
+          "index": 1,
+          "label": "civic",
+          "priv": "5e0aa6eb0fb2cf6631e9361abae33c272ce720c4ce4947081cfb4edd80a99b0a",
+          "pub": "86d7cd04d96a21cd797dc5c65f4d20156a31c733298832a0ec94971f6b49414c"
+        },
+        {
+          "index": 2,
+          "label": "anonymous",
+          "priv": "f517e3878c84af815841afe0c82246159674bd760cc001d6de0155298cc89e0b",
+          "pub": "a201f4f99bb166e7729932df7bb6a139ba1892d84d50e4cc4042dcbe9afb2135"
+        }
+      ]
+    },
+    {
+      "seed": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "spendPriv": "5e325e2061ea853ca84ca7e493eb049b8a02072174d2880cc5d8005612add807",
+      "viewPriv": "3bea802b738b1ad32415462d69147c78863d3e8443447f24d782572abab3a800",
+      "spendPub": "60227715a733501d592923fb4453f7816eaebcd5b3a065630132f742444d1159",
+      "identities": [
+        {
+          "index": 0,
+          "label": "public",
+          "priv": "493eea8d6484f633fdbbeea98f57cb848e55ddf71e41f1c394751976c0301a02",
+          "pub": "56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347"
+        },
+        {
+          "index": 1,
+          "label": "civic",
+          "priv": "be9619f87dd62a3fd90a730a1c3806451caa153c9c8629b10762d037fa1adc05",
+          "pub": "745f1f7c3ee492bc96919fc5ec46805097d0f4379abbf137fea0100c7059d00a"
+        },
+        {
+          "index": 2,
+          "label": "anonymous",
+          "priv": "dc7842f4324f11a27cac8856141b826c539233470a99c73fc197d51f8454f809",
+          "pub": "a67fc116d9e2da3fc0c5ba0252ac9050a0eb2cad20d416cd89ca88d316bf5015"
+        }
+      ]
+    }
+  ]
+}

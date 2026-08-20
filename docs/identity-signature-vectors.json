@@ -1,0 +1,170 @@
+{
+  "spec": "docs/IDENTITY_SIGNATURES.md",
+  "version": 1,
+  "scheme": "sr25519 (Schnorr over ristretto255), identity scalar injected cofactor-shifted",
+  "note": "Implementations MUST reproduce `encoded` and `sr25519PublicKey` byte for byte, and MUST verify `signature`. They must NOT be expected to reproduce `signature` byte for byte: sr25519 signatures are randomized.",
+  "vectors": [
+    {
+      "seed": "0000000000000000000000000000000000000000000000000000000000000000",
+      "label": "public",
+      "purpose": "matrix-login",
+      "privLE": "433876fadae1cf7a81c8f6a0f2a1b24c6ed64c2f7afd90db23f5ac9a1ab9f30f",
+      "audience": "para-idp",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "matrix-login",
+        "audience": "para-idp",
+        "identityPub": "1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmatrix-login\npara-idp\n1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "e0348f6a010bc70f6aa778642c97bb5f6d2ddd80418a5849d60cd2e782f08958e9170a779b958b2e8543a46ae25a242dfac982c490414aec7539127ea88a7d84"
+    },
+    {
+      "seed": "0000000000000000000000000000000000000000000000000000000000000000",
+      "label": "anonymous",
+      "purpose": "matrix-login",
+      "privLE": "cd3d21ae6688d363dcb5d1f517f62ff88ab3a8ea8107cd3c27335275f64a7b04",
+      "audience": "para-idp",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "matrix-login",
+        "audience": "para-idp",
+        "identityPub": "3e2e9c0aaf0527650e65026ccafce10f558a1a61dfae4b51b09df57332133525",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "3e2e9c0aaf0527650e65026ccafce10f558a1a61dfae4b51b09df57332133525",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmatrix-login\npara-idp\n3e2e9c0aaf0527650e65026ccafce10f558a1a61dfae4b51b09df57332133525\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "8a5373133323976f22eb4ef34a0ed3eb011af395d79602141bd2688d4207905133a4558ac804e4fc0d76e0add4e15fa081f04c789f52794eaf413d657f53178b"
+    },
+    {
+      "seed": "0000000000000000000000000000000000000000000000000000000000000000",
+      "label": "public",
+      "purpose": "mubez-registration",
+      "privLE": "433876fadae1cf7a81c8f6a0f2a1b24c6ed64c2f7afd90db23f5ac9a1ab9f30f",
+      "audience": "mubez",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "mubez-registration",
+        "audience": "mubez",
+        "identityPub": "1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmubez-registration\nmubez\n1ab9ade6921927de4d143926093f52d886a9ac724312daeac39b9da943833715\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "5c5ce4df85e295168b40481f826437d30d9176bdbbcfb683ba8c60d0d81c9739274f28001011b8cfd01e69f6ee4fd59076984060b8b2c9e233e70df0cb5b1e8e"
+    },
+    {
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "label": "public",
+      "purpose": "matrix-login",
+      "privLE": "2854ad5b22d1f6672697ab6ef1fdf446c41f7a150b2875b7aa5371fdf0ef4807",
+      "audience": "para-idp",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "matrix-login",
+        "audience": "para-idp",
+        "identityPub": "90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmatrix-login\npara-idp\n90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "60411db4d4796a81310771fcf0759c32586f87b031dbdfb58cf97e9bed10c142ccce7296067dd2b2e89deb3dc93b06f8e12112f2c0cd7a862011fabdb9e5ec8f"
+    },
+    {
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "label": "anonymous",
+      "purpose": "matrix-login",
+      "privLE": "f517e3878c84af815841afe0c82246159674bd760cc001d6de0155298cc89e0b",
+      "audience": "para-idp",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "matrix-login",
+        "audience": "para-idp",
+        "identityPub": "a201f4f99bb166e7729932df7bb6a139ba1892d84d50e4cc4042dcbe9afb2135",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "a201f4f99bb166e7729932df7bb6a139ba1892d84d50e4cc4042dcbe9afb2135",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmatrix-login\npara-idp\na201f4f99bb166e7729932df7bb6a139ba1892d84d50e4cc4042dcbe9afb2135\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "6c647ea6594e0a19cab2e5521daf6f74c702bf7c854823600d393915c5050d2e283890c4ec8646538e407700d317b9b78a2a8ef6b6c84087dc6d02276f51da86"
+    },
+    {
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "label": "public",
+      "purpose": "mubez-registration",
+      "privLE": "2854ad5b22d1f6672697ab6ef1fdf446c41f7a150b2875b7aa5371fdf0ef4807",
+      "audience": "mubez",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "mubez-registration",
+        "audience": "mubez",
+        "identityPub": "90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmubez-registration\nmubez\n90b2d271f4c2abc4b96f9b4f8472f080cede31fd9ac6766604167b2f7ba1fe65\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "5e9dd06a2aa518879815f965264d716a1388d0afc7310797d63fe0159325fc207bb51b35af840624bead78d1a37c5b9697de2a2b52544009c18540bbab3d048f"
+    },
+    {
+      "seed": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "label": "public",
+      "purpose": "matrix-login",
+      "privLE": "493eea8d6484f633fdbbeea98f57cb848e55ddf71e41f1c394751976c0301a02",
+      "audience": "para-idp",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "matrix-login",
+        "audience": "para-idp",
+        "identityPub": "56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmatrix-login\npara-idp\n56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "08bdd4f2615da81c4e15e236a26752f9259fc1f58a3da4141807d236b396606a9508e35c98a6cfa00aa3e0fe1d3488ba9869c1e4eb4077964fcab4841cd12489"
+    },
+    {
+      "seed": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "label": "anonymous",
+      "purpose": "matrix-login",
+      "privLE": "dc7842f4324f11a27cac8856141b826c539233470a99c73fc197d51f8454f809",
+      "audience": "para-idp",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "matrix-login",
+        "audience": "para-idp",
+        "identityPub": "a67fc116d9e2da3fc0c5ba0252ac9050a0eb2cad20d416cd89ca88d316bf5015",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "a67fc116d9e2da3fc0c5ba0252ac9050a0eb2cad20d416cd89ca88d316bf5015",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmatrix-login\npara-idp\na67fc116d9e2da3fc0c5ba0252ac9050a0eb2cad20d416cd89ca88d316bf5015\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "72df0cd6db8352f28aa78b6190c7d76cc6af384eea965a4ab2ecf19534b41563197fa5f4534cbcdfd1a671d2371d267070e321a74ee634180f8a6b5ae3d1e281"
+    },
+    {
+      "seed": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "label": "public",
+      "purpose": "mubez-registration",
+      "privLE": "493eea8d6484f633fdbbeea98f57cb848e55ddf71e41f1c394751976c0301a02",
+      "audience": "mubez",
+      "assertion": {
+        "type": "para.identity.pop.v1",
+        "purpose": "mubez-registration",
+        "audience": "mubez",
+        "identityPub": "56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347",
+        "challenge": "c2hhcmVkLXRlc3QtY2hhbGxlbmdl",
+        "signedAt": "2026-08-24T12:00:00.000Z"
+      },
+      "sr25519PublicKey": "56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347",
+      "encoded": "para-id/sig/v1\npara.identity.pop.v1\nmubez-registration\nmubez\n56bcb887508f40f2bc15ce2a9dfb567099b23bfa49c472abb15d0f1cf43aa347\nc2hhcmVkLXRlc3QtY2hhbGxlbmdl\n2026-08-24T12:00:00.000Z",
+      "signature": "8cf585600448c43d084e7d245ab325fc7eec976dd66dc8c86ba76c3c1a06106c52614334d4c69f12365c0dc5d06a2d4efd0e2b37c2b25465e1599b3ea58ae08d"
+    }
+  ]
+}

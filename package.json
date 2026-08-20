@@ -28,6 +28,7 @@
     "@atproto/oauth-client-node": "^0.3.13",
     "@growthbook/growthbook": "^1.6.5",
     "@poppinss/validator-lite": "^2.1.2",
+    "@scure/sr25519": "^2.3.0",
     "better-sqlite3": "^12.10.0",
     "circomlibjs": "^0.1.7",
     "jose": "^6.2.3",
@@ -38,6 +39,8 @@
   "devDependencies": {
     "@adonisjs/assembler": "^8.4.0",
     "@adonisjs/tsconfig": "^2.0.0",
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
     "@poppinss/ts-exec": "^1.4.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.13.0",
