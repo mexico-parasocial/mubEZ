@@ -203,6 +203,12 @@ export function buildSession(
   }))
 
   const proofs = proofRows.map((r) => ({
+    // para.artifact.v1: signed once at issuance, stored in attestation_json.
+    // Absent when the artifact predates signing or no issuer seed is
+    // configured — the client shows `unsigned`.
+    attestation: r.attestation_json
+      ? JSON.parse(r.attestation_json as string)
+      : undefined,
     id: r.id as string,
     grantId: r.grant_id as string,
     requestId: r.request_id as string,

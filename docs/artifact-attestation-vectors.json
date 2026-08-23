@@ -1,0 +1,33 @@
+{
+  "version": "para.artifact.v1",
+  "note": "Cross-repo verification vector. The canonical string and signature are reproducible only with the pinned nonce entropy; production signatures use fresh entropy. iM8 must verify this artifact as *verified* with issuerPub trusted.",
+  "seed": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+  "nonceEntropy": "0000000000000000000000000000000000000000000000000000000000000000",
+  "issuerPub": "44a996beb1eef7bdcab976ab6d2ca26104834164ecf28fb375600576fcc6eb0f",
+  "artifact": {
+    "id": "proof-vector-1",
+    "grantId": "grant-42",
+    "requestId": "req-7",
+    "claimType": "humanity",
+    "requestedValue": null,
+    "outcome": "granted",
+    "statement": "The holder demonstrated proof of humanity.",
+    "proofMode": "proof-only",
+    "issuerId": "m8.broker",
+    "verifierId": "m8.broker",
+    "audienceAppId": "app.para.console",
+    "surface": "public",
+    "reference": "",
+    "status": "active",
+    "issuedAt": "2026-08-22T00:00:00.000Z",
+    "lastUsedAt": null,
+    "expiresAt": null,
+    "revokedAt": null
+  },
+  "canonical": "para.artifact.v1\nproof-vector-1\ngrant-42\nreq-7\nhumanity\n\ngranted\nThe holder demonstrated proof of humanity.\nproof-only\nm8.broker\nm8.broker\napp.para.console\npublic\n2026-08-22T00:00:00.000Z\n",
+  "attestation": {
+    "alg": "para.artifact.v1",
+    "issuerPub": "44a996beb1eef7bdcab976ab6d2ca26104834164ecf28fb375600576fcc6eb0f",
+    "signature": "06fe585689863d48374f8ca4cbc2ca1e2320e080ef5e2c73c3153663e839ed7c4c60d8dd5a42d9c0ac5488e437fbd60bb2033e6822c1cbb6db773c1a78e80c8a"
+  }
+}

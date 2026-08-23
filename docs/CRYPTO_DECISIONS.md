@@ -223,3 +223,56 @@ anyone who learned it could claim the account.
 
 **Related.** WatZappa records the Matrix-side consequence as CD-M4 in
 `docs/MATRIX_V2.md`.
+
+---
+
+## CD-8 — Proof artifacts are signed once at issuance (`para.artifact.v1`)
+
+**Decision.** Every row written to `proof_artifacts` is attested with an
+sr25519 signature over a fixed 15-field canonical encoding (prefix
+`para.artifact.v1`, newline-joined), signed **once at issuance** and stored in
+the new `attestation_json` column. The client (iM8) verifies with the
+byte-identical encoding in `src/services/artifactVerification.ts` and a
+pinned issuer list; the published vector in
+`docs/artifact-attestation-vectors.json` is asserted by tests on both sides.
+
+**Problem.** Until now the client rendered whatever `outcome` the broker sent:
+a compromised broker, an intermediary or a plain server bug all looked the
+same as a genuine verification. The attestation is what separates a verifier
+from a viewer — it had to be cryptographic, and it had to be stable.
+
+**Details that carry the decision.**
+
+- **Signed at issuance, never re-derived.** sr25519 signatures are randomized
+  (CD-7): re-signing on read would change the bytes between fetches. A stored
+  proof artifact is evidence; evidence must not silently change. Rows created
+  before this change simply have no attestation and verify as `unsigned` —
+  the client's honest state, unchanged in meaning.
+- **Unset seed means unsigned, not broken.** With no `M8_ARTIFACT_ISSUER_SEED`
+  the broker behaves exactly as before. A missing key is a visible "cannot
+  verify", never a fake verification.
+- **sr25519, not the Ed25519 of `issuerKeyStore`.** The client contract, the
+  canonical encoding and both repos' shared infrastructure already speak
+  sr25519 (CD-7 family); the attestation is the same scheme, same library,
+  same audit trail. The Ed25519 JWK issuer keys remain for credential signing,
+  a different artifact type with different rotation needs.
+- **Trust is pinned client-side.** `EXPO_PUBLIC_M8_TRUSTED_ISSUERS` on the
+  client is where issuer public keys are trusted — never fetched from this
+  broker, or verification is theatre.
+- **Vectors pin the encoding and public key; signature bytes are reproducible
+  only with the pinned nonce entropy** published alongside, for cross-repo
+  contract tests. Same principle as CD-7's vectors.
+
+**Rejected alternatives.**
+
+- *Sign on read, no storage.* Rejected for the randomized-nonce reason above:
+  every `GET /session` would mint new signature bytes for the same artifact.
+- *Deterministic nonces to make read-time signing stable.* Rejected: nonce
+  determinism is a foot-gun the scheme deliberately avoids (CD-7's synthetic
+  nonces exist precisely because nonce reuse publishes the private key), and
+  it buys nothing over storing the one signature that matters.
+- *Ed25519 with the existing issuer JWKs.* One more algorithm in the client
+  for no gain; see above.
+
+**Related.** iM8's `artifactVerification.ts` (the verifier this satisfies) and
+`__tests__/artifactAttestationVector.test.ts` (the cross-repo assertion).
