@@ -2,13 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection.js'
 import { appError } from '../utils/errors.js'
 
-function writeLedger(sessionId: string, action: string, targetType: string, targetId: string, detail: unknown) {
-  const db = getDb()
-  db.prepare(`
-    INSERT INTO ledger (session_id, action, target_type, target_id, detail_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(sessionId, action, targetType, targetId, JSON.stringify(detail ?? {}), new Date().toISOString())
-}
+// D2 (F2b): no writeLedger here — a session-scoped audit row naming an anonymous
+// profile is the linkage the threat model forbids. See
+// docs/F2B_SESSION_MIGRATION.md. (The `anonymous_follows.follower_session_id`
+// column is a separate linkage handled by the resolver cutover.)
 
 /**
  * Follower graph for anonymous identities, tier-enforced by design:
@@ -115,7 +112,6 @@ export function followAnonymousProfile(sessionId: string, targetId: string) {
     VALUES (?, ?, ?, ?)
   `).run(`anon-follow-${randomUUID()}`, sessionId, profileId, new Date().toISOString())
 
-  writeLedger(sessionId, 'AnonymousProfileFollowed', 'anonymous_profile', profileId, {})
   return { following: true, followerCount: followerCount(profileId), profileId, followerProfileId }
 }
 

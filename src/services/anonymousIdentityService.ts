@@ -145,11 +145,8 @@ export function createAnonymousIdentity(sessionId: string, input: {
     now,
     now,
   )
-  writeLedger(sessionId, 'AnonymousIdentityCreated', 'anonymous_identity', id, {
-    surface: input.surface ?? 'civic',
-    communityUri: input.communityUri ?? null,
-    burnAfter: input.burnAfter ?? 'none',
-  })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   return requireAnonymousIdentity(sessionId, id)
 }
 
@@ -196,7 +193,8 @@ export function updateAnonymousIdentity(sessionId: string, identityId: string, i
     identityId,
     sessionId,
   )
-  writeLedger(sessionId, 'AnonymousIdentityUpdated', 'anonymous_identity', identityId, { status, burnAfter: input.burnAfter })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   return requireAnonymousIdentity(sessionId, identityId)
 }
 
@@ -248,10 +246,8 @@ export function linkAnonymousPost(sessionId: string, input: {
     now,
     now,
   )
-  writeLedger(sessionId, 'AnonymousPostLinked', 'anonymous_identity_post', id, {
-    identityId: identity.id,
-    postUri: input.postUri,
-  })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
 
   const post = requireAnonymousPost(sessionId, id)
 
@@ -265,10 +261,8 @@ export function linkAnonymousPost(sessionId: string, input: {
       communityUri: identity.communityUri,
       burnAfter: 'post',
     })
-    writeLedger(sessionId, 'AnonymousIdentityBurned', 'anonymous_identity', identity.id, {
-      postUri: input.postUri,
-      replacementIdentityId: rotatedIdentity.id,
-    })
+    // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+    // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   }
 
   return { post, rotatedIdentity }
@@ -292,13 +286,8 @@ export function updateAnonymousPostStats(sessionId: string, postId: string, stat
     new Date().toISOString(),
     postId,
   )
-  writeLedger(sessionId, 'AnonymousPostStatsUpdated', 'anonymous_identity_post', postId, {
-    replyCount: stats.replyCount,
-    repostCount: stats.repostCount,
-    likeCount: stats.likeCount,
-    quoteCount: stats.quoteCount,
-    threadCount: stats.threadCount,
-  })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   return requireAnonymousPost(sessionId, postId)
 }
 
@@ -322,7 +311,8 @@ export function updateAnonymousPostDmPolicy(sessionId: string, postId: string, d
     UPDATE anonymous_identity_posts SET dm_policy = ?, updated_at = ?
     WHERE id = ?
   `).run(dmPolicy, new Date().toISOString(), postId)
-  writeLedger(sessionId, 'AnonymousDmPolicyUpdated', 'anonymous_identity_post', postId, { dmPolicy })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   return requireAnonymousPost(sessionId, postId)
 }
 
@@ -371,10 +361,8 @@ export function linkGermContact(sessionId: string, identityId: string, input: {
     null,
   )
 
-  writeLedger(sessionId, 'AnonymousGermLinked', 'anonymous_identity', identityId, {
-    provider: 'germ',
-    mode: input.mode ?? 'germ-card-link',
-  })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   return getActiveGermConnection(identityId)!
 }
 
@@ -392,7 +380,8 @@ export function unlinkGermContact(sessionId: string, identityId: string): Anonym
     UPDATE anonymous_identity_posts SET dm_policy = ?, updated_at = ?
     WHERE identity_id = ?
   `).run('off', now, identityId)
-  writeLedger(sessionId, 'AnonymousGermUnlinked', 'anonymous_identity', identityId, { provider: 'germ' })
+  // D2 (F2b): no session-scoped ledger row for anonymous-identity actions —
+  // that relation is the linkage the threat model forbids. See docs/F2B_SESSION_MIGRATION.md.
   return { ...germ, status: 'revoked', revokedAt: now, updatedAt: now }
 }
 
@@ -669,13 +658,8 @@ function getSessionIdentity(sessionId: string): { did: string } {
   return row
 }
 
-function writeLedger(sessionId: string, action: string, targetType: string, targetId: string, detail: unknown) {
-  const db = getDb()
-  db.prepare(`
-    INSERT INTO ledger (session_id, action, target_type, target_id, detail_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(sessionId, action, targetType, targetId, JSON.stringify(detail ?? {}), new Date().toISOString())
-}
+// D2 (F2b): the local writeLedger was removed with its callers — the account
+// ledger no longer records anonymous-identity actions (docs/F2B_SESSION_MIGRATION.md).
 
 function normalizeStats(
   input: Partial<Omit<AnonymousPostStats, 'syncedAt'>> | undefined,

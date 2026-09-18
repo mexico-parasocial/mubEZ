@@ -64,28 +64,43 @@ Verify it holds only a coarse status, never a device id, before the FK drops.
 
 ---
 
-## 🟡 Decisions needed before the FK can drop
+## 🟡 Decisions (resolved 2026-09-18)
 
-These relate the anonymous identity to the account today and have no mechanical
-re-anchor. They are the real blockers, and they are product/privacy calls.
+Both were delegated to the maintainer's judgment. Recorded here; D2 is executed
+now (it removes a linkage that leaks today, independent of the cutover), D1 is
+scheduled as its own workstream.
 
-**D1 — Proof badges and verification.** `listPublicProofBadges(sessionId)` and
-`hasActiveParaVerification(sessionId)` read the *account's* proof artifacts by
-session and stamp them onto the anonymous identity's public card
-(`hydrateIdentityCard`, `getAnonymousContactEligibility`). That is a real link:
-"this anonymous voice carries the badges of the account behind it." The badges
-are the point of the feature (a verified anonymous voice), so they cannot just
-be dropped. The question: does a badge attach to the *identity key* (proven
-about that key, e.g. a credential the client presents per identity) rather than
-resolved from the session's records? Until decided, badges keep the identity ↔
-account link alive even after the FK goes.
+**D1 — Proof badges and verification. DECISION: badges attach to the identity
+key, proven about it — never resolved from the session. This is a separate
+workstream; the FK drop is gated on it.**
 
-**D2 — The ledger.** `writeLedger(sessionId, 'Anonymous…', 'anonymous_identity',
-id, …)` writes an audit row relating a session to actions on a specific
-anonymous identity. That is linkage by audit log — precisely what the threat
-model says audit must not record. Decision: drop the identity-scoped ledger
-entries, or re-scope them so an entry never relates a session to an anonymous
-identity id. (Operational audit that names no anonymous identity can stay.)
+`listPublicProofBadges(sessionId)` / `hasActiveParaVerification(sessionId)` read
+the *account's* proof artifacts by session and stamp them onto the anonymous
+card (`hydrateIdentityCard`, `getAnonymousContactEligibility`). A verified
+anonymous voice is the point of the feature, so the badges cannot simply be
+dropped — but resolving them from the session is the privacy lie we are removing.
+
+The target is a per-identity attestation: the m8 proof-broker binds a claim to
+`identity_pub` (reusing the CD-8 sr25519 attestation machinery), the client
+presents it, the server verifies it about the key. No session lookup. That is a
+credential workstream, not part of the resolver swap, and it is the true gate on
+fully dropping the session link — until it ships, either new keyed identities
+show no account-derived badges, or the badge lookup keeps the link alive.
+**We do not keep the session badge lookup as a shortcut; that is the lie.**
+
+**D2 — The ledger. DECISION: the account ledger records no row that relates a
+session to a specific anonymous identity or post. Those `writeLedger` calls are
+removed.**
+
+`writeLedger(sessionId, 'Anonymous…', 'anonymous_identity', id, …)` writes a
+session-scoped audit row naming a specific anonymous identity/post — exactly the
+session↔identity relation the threat model forbids, and it leaks *today*: the
+account-facing `GET /v1/ledger` returns "you created anonymous identity X", and
+the server holds that row keyed by session. The account's audit trail must not
+contain its anonymous activity, or the activity is not anonymous. Per-identity
+audit, if ever wanted, belongs in a separate identity-keyed log with no session
+— a future concern, not this. Operational/global ledger entries that name no
+anonymous identity are untouched.
 
 ---
 
