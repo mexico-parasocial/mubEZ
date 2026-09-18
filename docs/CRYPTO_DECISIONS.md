@@ -348,8 +348,11 @@ which is this contract.
   a distinct client-derived `identity_pub` registered on its own, not a row the
   server spins up — so the burner scheme is blocked on the `/v2` derivation, and
   the tiering (`tier: 'main' | 'burner'`) the client renders today has no
-  cryptographic backing yet. This must be resolved before burners ship, not
-  after.
+  cryptographic backing yet. **Decided 2026-09-18: burners are deferred.** F2b
+  makes the three fixed identities (0/1/2) register and authenticate correctly;
+  the `/v2` per-community burner derivation and any server-invented burner rows
+  are out of its scope. Until then the client's `burner` tier is presentational
+  only and must not be described as an unlinkable identity.
 - **The ~28 session-scoped call sites are the migration (F2b).** Each read that
   resolves an identity through `session_id` becomes a per-request proof of
   possession against the presented `identity_pub`. The FK and its index are
