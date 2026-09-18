@@ -276,3 +276,94 @@ from a viewer — it had to be cryptographic, and it had to be stable.
 
 **Related.** iM8's `artifactVerification.ts` (the verifier this satisfies) and
 `__tests__/artifactAttestationVector.test.ts` (the cross-repo assertion).
+
+---
+
+## CD-9 — Identity registration receives a public key with proof of possession, stored standalone
+
+**Decision.** A PARA identity is registered by the client sending
+`identity_pub_i` and an sr25519 proof of possession over the registration
+challenge (CD-7, purpose `mubez-registration`), one HTTP request per identity.
+The server verifies the signature against the supplied public key and stores
+that key **standalone**: no column, foreign key or index relates it to a
+session, a seed, a view key, or another identity's public key. This is the
+registration contract `IDENTITY_DERIVATION.md` has always named and never
+implemented, now pinned as a decision.
+
+**Problem.** The shipped model is the exact inverse of the derivation spec, on
+every axis that matters:
+
+- **The server invents the identity.** `createAnonymousIdentity(sessionId, …)`
+  generates a random 32-byte `secret` server-side, stores
+  `nullifier_secret_hash = sha256(secret)`, and returns a row the client never
+  had a key for. iM8 holds `identity_priv_i` (`keyDerivation.ts`) and sends only
+  display metadata (`surface`, `displayName`). The keyholder proves nothing; a
+  bystander who reaches the endpoint gets an identical row.
+- **Identities are keyed by session.** `anonymous_identities.session_id` is
+  `NOT NULL REFERENCES sessions(session_id)`, indexed by
+  `idx_anonymous_identities_session`. `IDENTITY_DERIVATION.md` forbids this by
+  name: *"No table may relate two identity public keys, or an identity key to a
+  seed, view key, or another identity's session."* The session FK is that
+  relation. Every one of the ~28 `getSessionId`-scoped call sites in
+  `app/controllers/anonymous_controller.ts` reads identity through it.
+- **There is no `identity_pub` column at all.** The public key the whole scheme
+  is built on is absent from storage; the server has never seen one.
+
+WatZappa made the gap load-bearing: after CD-M1 the Matrix account name is
+`H(identity_pub_i)` and the server cannot compute it (MATRIX_V2 F7). Membership
+projection, the OD-6 join seam and the private vote path all wait on a server
+that can verify possession of an identity key without holding a linkage table —
+which is this contract.
+
+**Rejected alternatives.**
+
+- *Keep session-scoped rows, add `identity_pub` beside them.* The additive,
+  low-churn option, and wrong: the session FK is the linkage the spec removes,
+  so leaving it makes `identity_pub` decorative while the correlation the scheme
+  exists to prevent still sits one column over. Half-measures here fail closed
+  only by accident.
+- *Let the server keep minting the nullifier secret.* Convenient — no client
+  change — but it means the server knows the secret behind every anonymous
+  identity, so "anonymous" is anonymous to other users and transparent to the
+  operator. Same class of defect as OD-7 §5a's server-side vote nullifier, and
+  the same fix: the secret is client-derived, the server verifies a proof.
+- *One registration transaction for all identities of a user.* Batching is the
+  obvious efficiency and reintroduces the linkage at the transport layer: a
+  shared request, token or session correlates the keys even with no table.
+  `IDENTITY_DERIVATION.md` already requires one unbatched, uncorrelated request
+  per identity; this decision inherits that.
+- *Register the ballot identity here too.* Rejected by OD-7 Reading A: `civic`
+  (index 1) never signs. It is not an `anonymous_identities` row, does not
+  authenticate, and is proven-about at vote time, not registered. The signing
+  allowlist (`isMatrixIdentityLabel`, `SIG_PURPOSES`) must keep refusing it; see
+  OD-7 for the binding-proof path that replaces a registration signature there.
+
+**Consequences.**
+
+- **Burner identities become derived keys, not server rows.** The shipped table
+  lets a session own arbitrarily many identities (main, per-community, pajareo,
+  `burn_after`). The derivation spec has three fixed indexes (0/1/2) and
+  reserves ≥3 for per-community burners **under a future `/v2` tweak label**
+  (`IDENTITY_DERIVATION.md` §Identity indexes). Under this contract a burner is
+  a distinct client-derived `identity_pub` registered on its own, not a row the
+  server spins up — so the burner scheme is blocked on the `/v2` derivation, and
+  the tiering (`tier: 'main' | 'burner'`) the client renders today has no
+  cryptographic backing yet. This must be resolved before burners ship, not
+  after.
+- **The ~28 session-scoped call sites are the migration (F2b).** Each read that
+  resolves an identity through `session_id` becomes a per-request proof of
+  possession against the presented `identity_pub`. The FK and its index are
+  dropped last, once nothing reads them. `nullifier_secret_hash` derived from a
+  server secret is removed in the same pass (its replacement is client-anchored,
+  per OD-7 §5a).
+- **Verification is fail-closed and never 500s.** Reuses CD-7's wrapped verifier:
+  a malformed point or null body is an auth failure, not a server error, on what
+  becomes a public registration endpoint.
+- **This supersedes** the registration section of `IDENTITY_DERIVATION.md` by
+  making it normative and testable, and it is what OD-7 §7's open checkbox
+  "registration binds one ballot identity per credential" builds against for the
+  ballot side.
+
+**Related.** WatZappa MATRIX_V2 F7 (unimplementable push projection), OD-6 (join
+seam), OD-7 (ballot identity registration, Reading A). iM8
+`keyDerivation.ts` / `identitySignature.ts` (the client half, already shipped).

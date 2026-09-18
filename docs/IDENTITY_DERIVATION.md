@@ -66,6 +66,13 @@ extends the tweak input, in a `/v2` label, rather than reusing these.
 
 ## Registration contract (mubEZ)
 
+**Normative decision: `docs/CRYPTO_DECISIONS.md` CD-9.** The shipped
+`anonymous_identities` model does the opposite of this section — the server
+invents identities keyed by `session_id` and never receives `identity_pub_i` —
+so this contract is the target, not the current state. CD-9 records the decision
+and the migration; the ballot identity (`civic`) is excluded here per OD-7
+Reading A.
+
 - The client registers each identity by sending only `identity_pub_i` and a
   signature over the registration challenge with `identity_priv_i`
   (proof of possession). **The scheme is specified in
