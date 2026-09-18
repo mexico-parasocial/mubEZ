@@ -107,8 +107,12 @@ anonymous identity are untouched.
 ## Order of execution (once D1/D2 are decided)
 
 1. Move `requireAnonymousIdentityRow` and the resolvers onto `identity_pub`,
-   with the controller verifying a PoP per request and passing the proven key
-   down instead of the session. Posts/germ inherit it.
+   with the controller verifying a **per-request `anon-action` proof (CD-10)**
+   and passing the proven key down instead of the session. CD-10 fixes the proof
+   shape — it mirrors the reviewed M8 assurance / DPoP primitive
+   (`m8-assurance-store`) rather than a bespoke mubEZ nonce — so this step is
+   blocked on that primitive landing in mubEZ and iM8 sending the proof.
+   Posts/germ inherit the resolver change.
 2. Resolve D1 (badges) and D2 (ledger) per the decisions above.
 3. Stop writing `session_id` and the server `nullifier_secret_hash` on create.
 4. Backfill/settle: existing rows either get their `identity_pub` stamped

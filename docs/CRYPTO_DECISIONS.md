@@ -370,3 +370,85 @@ which is this contract.
 **Related.** WatZappa MATRIX_V2 F7 (unimplementable push projection), OD-6 (join
 seam), OD-7 (ballot identity registration, Reading A). iM8
 `keyDerivation.ts` / `identitySignature.ts` (the client half, already shipped).
+
+---
+
+## CD-10 — Per-request proof of possession for anonymous mutations, modeled on the M8 assurance / DPoP pattern
+
+**Decision.** The anonymous-surface mutations (create / update / link-post /
+link-germ / follow) authorize by a **per-request proof of possession of the
+`anonymous` identity key**, not by session. The proof follows the shape already
+built and tested in the permissioned-data PDS
+(`packages/pds/src/account-manager/m8-assurance-store.ts` and
+`m8-assurance-verifier.ts`), which is itself the atproto **DPoP** pattern: a
+server-issued single-use challenge plus a client one-time id, both consumed
+atomically. mubEZ mirrors that shape rather than inventing its own, so the
+broker and the PDS converge on one assurance protocol instead of two.
+
+**Problem.** F2b removes the `session_id` link from `anonymous_identities`
+(F2B_SESSION_MIGRATION.md). Once it is gone, the mutation endpoints can no longer
+answer "whose identity is this?" from the session. They need to answer it from a
+proof that the caller holds the identity key — per request, because a
+session-scoped proof would just move the linkage into whatever holds the session.
+The registration proof (CD-9) establishes the key exists; it does not authorize a
+later mutation.
+
+The naive version — a lone freshness-bounded signature — is replayable inside its
+window and binds to nothing. This was about to be hand-rolled in mubEZ before it
+was noticed that the reviewed primitive already exists (credit: the tranquil-pds
+device-session lineage and the atproto DPoP model it follows).
+
+**The pattern to mirror** (from `m8-assurance-store`):
+
+- **Server issues a single-use challenge**: a 256-bit nonce, stored **hashed**
+  (`nonceHash`), with an expiry and a cap on pending challenges per caller to
+  bound abuse. The raw nonce is returned once and never stored.
+- **The client signs a proof** binding: the `anonymous` identity key
+  (`identity_pub`), the action, the audience, the server nonce, and a client
+  `jti` (one-time id), under a new signing purpose **`anon-action`** so a
+  mutation proof can never verify as a `matrix-login`, `mubez-registration`, or
+  `message-approve` (purpose is inside the signed bytes — CD-7).
+- **The server consumes atomically**: mark the nonce consumed
+  (`WHERE consumedAt IS NULL`, bound to the presenting key) **and** insert the
+  `jti` with `ON CONFLICT DO NOTHING` — the double guard that makes a replay fail
+  even if two requests race. This is exactly `m8-assurance-store.consume`.
+
+**Rejected alternatives.**
+
+- *A lone content-committing signature (message-approve style), no server nonce.*
+  Simpler and one fewer round-trip, but replayable within the freshness window
+  and with no server-side single-use guarantee. `message-approve` accepts this
+  because a replayed message approval is low-harm; a replayed identity mutation
+  is not.
+- *A bespoke single-nonce store in mubEZ.* What was almost built. Rejected: it
+  would be a second, unreviewed copy of a primitive the PDS already has under
+  test, and it would diverge from the assurance protocol the broker must
+  eventually agree with (INFORME_AVANCE_PARA_ES.md names "acuerdo … contra el
+  broker real" as the open piece). Mirror the reviewed one, or share it.
+- *Reuse the CD-9 registration challenge table as-is.* Its rows are purpose-blind
+  nonces, so it would function, but the name and single-guard (nonce only, no
+  jti) are registration-shaped. The action path wants the nonce+jti double guard;
+  generalize the store to carry both rather than overloading the registration
+  table.
+
+**Consequences.**
+
+- `anon-action` is added to `SIG_PURPOSES` on both the mubEZ verifier and the iM8
+  signer. The signer's Matrix allowlist still refuses `civic`, so the ballot key
+  cannot sign a mutation either.
+- A challenge store carrying `nonceHash`, `jti`, `consumedAt`, expiry and a
+  pending cap is added to mubEZ, mirroring the PDS schema field-for-field so the
+  two can later share one implementation. It is keyed by the nonce/jti, never by
+  a session.
+- This is the mechanism F2B_SESSION_MIGRATION.md step 1 depends on: only once the
+  mutation endpoints verify an `anon-action` proof can they resolve by
+  `identity_pub` and the `session_id` FK be dropped. Until the client sends the
+  proof, the endpoints keep the session path (additive cutover).
+- Convergence is the point: the same proof shape should ultimately let the PDS
+  `m8-assurance-verifier` and the mubEZ broker validate against one contract.
+
+**Related.** CD-9 (registration), CD-7 (the sr25519 proof primitive and purpose
+binding), OD-7 (ballot key never signs). Reference implementations:
+`WatZappa-permissioned-data/packages/pds/src/account-manager/m8-assurance-store.ts`
+and `.../m8-assurance-verifier.ts`. Device-session lineage: tranquil-pds
+(`WatZappa/services/matrix-bridge/.../identity-matrix.ts`).
