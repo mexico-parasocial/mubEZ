@@ -24,6 +24,12 @@ router
 
     router.get('/issuers', '#controllers/issuers_controller.index')
 
+    // Identity registration (CD-9): public and session-unbound by design — the
+    // proof of possession is the authorization, and tying it to a session would
+    // recreate the linkage the identity scheme removes.
+    router.post('/identity/register/challenge', '#controllers/identity_registration_controller.challenge')
+    router.post('/identity/register', '#controllers/identity_registration_controller.register')
+
     router.get('/anonymous/public-contact', '#controllers/anonymous_controller.publicContact')
     router.get('/pajareo/representatives/:representativeId', '#controllers/pajareo_controller.representative')
 
