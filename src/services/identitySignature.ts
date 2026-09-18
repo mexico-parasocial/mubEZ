@@ -17,7 +17,7 @@ import { verify } from '@scure/sr25519'
 
 export const DOMAIN_IDENTITY_SIG = 'para-id/sig/v1'
 
-export const SIG_PURPOSES = ['matrix-login', 'mubez-registration'] as const
+export const SIG_PURPOSES = ['matrix-login', 'mubez-registration', 'anon-action'] as const
 export type SigPurpose = (typeof SIG_PURPOSES)[number]
 
 export interface IdentityAssertion {

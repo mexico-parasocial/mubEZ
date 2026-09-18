@@ -20,7 +20,7 @@ const SCALAR_MASK = 2n ** 256n - 1n
 export const DOMAIN_IDENTITY_SIG = 'para-id/sig/v1'
 export const DOMAIN_SIG_NONCE = 'para-id/sig-nonce/v1'
 
-export type SigPurpose = 'matrix-login' | 'mubez-registration'
+export type SigPurpose = 'matrix-login' | 'mubez-registration' | 'anon-action'
 
 export interface IdentityAssertion {
   type: 'para.identity.pop.v1'
