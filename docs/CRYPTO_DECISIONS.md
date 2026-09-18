@@ -377,13 +377,45 @@ seam), OD-7 (ballot identity registration, Reading A). iM8
 
 **Decision.** The anonymous-surface mutations (create / update / link-post /
 link-germ / follow) authorize by a **per-request proof of possession of the
-`anonymous` identity key**, not by session. The proof follows the shape already
-built and tested in the permissioned-data PDS
-(`packages/pds/src/account-manager/m8-assurance-store.ts` and
-`m8-assurance-verifier.ts`), which is itself the atproto **DPoP** pattern: a
-server-issued single-use challenge plus a client one-time id, both consumed
-atomically. mubEZ mirrors that shape rather than inventing its own, so the
-broker and the PDS converge on one assurance protocol instead of two.
+`anonymous` identity key**, not by session.
+
+**Correction (2026-09-18), before this was built upon.** An earlier draft of
+this decision said mubEZ should "mirror field-for-field" and "share one
+implementation" with the PDS `m8-assurance-store`/`verifier`. Reading the PDS
+code showed that is the wrong frame, in two ways:
+
+1. **Opposite direction and scheme.** The PDS m8-assurance is a **broker→PDS**
+   protocol: mubEZ (the M8 issuer) signs an **Ed25519 JWT**
+   (`application/para-m8-assurance+jwt`) and the *PDS* verifies it against
+   mubEZ's JWKS and consumes the nonce+jti. The CD-10 anon-action proof is the
+   other way round — **client→broker** — and is a raw **sr25519** PoP of the
+   identity key that *mubEZ* verifies. Different direction, different signature
+   scheme; they are not the same verifier and cannot be one.
+2. **The replay store is per-role, not shared at runtime.** Each verifier
+   consumes nonces in its own service: the PDS store lives on the PDS (for the
+   assurance JWT), the anon-action store lives on mubEZ (for the PoP). They are
+   different service processes with different DB layers (kysely/Postgres vs
+   `better-sqlite3`), so there is no single store instance to share, and a
+   cross-repo runtime package is not viable here (three separate git repos,
+   incompatible dependency trees).
+
+**What "share it" actually means here (decided 2026-09-18):** share the
+*contract*, the same mechanism that already shares CD-7's sr25519 scheme between
+mubEZ and iM8 — a written spec plus test vectors that each side pins. Concretely:
+
+- The **replay-consume algorithm** (issue a hashed single-use challenge with an
+  expiry and a pending-count cap; consume by atomically marking the nonce spent
+  `WHERE consumedAt IS NULL` **and** inserting the `jti` with conflict-ignore)
+  is specified once and implemented identically on each side against its own DB.
+  The PDS `m8-assurance-store.consume` is the reference behaviour to match.
+- The **anon-action PoP encoding** reuses CD-7 and its existing shared vectors
+  (`identity-signature-vectors.json`), extended with the `anon-action` purpose.
+- **Convergence target:** mubEZ implements *both* assurance roles it owns — the
+  Ed25519 assurance-JWT **issuer** (its unbuilt half of the broker→PDS protocol,
+  the "acuerdo contra el broker real" gap in INFORME_AVANCE_PARA_ES.md) and the
+  sr25519 anon-action **verifier** — over **one** replay-consume implementation
+  inside mubEZ, so the broker has a single, tested replay primitive rather than
+  two divergent copies. That is the sharing that is real and achievable.
 
 **Problem.** F2b removes the `session_id` link from `anonymous_identities`
 (F2B_SESSION_MIGRATION.md). Once it is gone, the mutation endpoints can no longer
@@ -420,11 +452,12 @@ device-session lineage and the atproto DPoP model it follows).
   and with no server-side single-use guarantee. `message-approve` accepts this
   because a replayed message approval is low-harm; a replayed identity mutation
   is not.
-- *A bespoke single-nonce store in mubEZ.* What was almost built. Rejected: it
-  would be a second, unreviewed copy of a primitive the PDS already has under
-  test, and it would diverge from the assurance protocol the broker must
-  eventually agree with (INFORME_AVANCE_PARA_ES.md names "acuerdo … contra el
-  broker real" as the open piece). Mirror the reviewed one, or share it.
+- *A bespoke single-nonce store in mubEZ.* What was almost built. Rejected: a
+  lone nonce with no jti is a weaker guard than the PDS store's reviewed
+  nonce+jti double-consume, and building a second divergent replay primitive is
+  what the sharing decision above exists to prevent. mubEZ gets **one**
+  replay-consume implementation matching the PDS reference, used by both broker
+  roles.
 - *Reuse the CD-9 registration challenge table as-is.* Its rows are purpose-blind
   nonces, so it would function, but the name and single-guard (nonce only, no
   jti) are registration-shaped. The action path wants the nonce+jti double guard;
