@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection.js'
 import { proofBrokerClaimLabel, type ProofBrokerClaimType, type ProofBrokerSurfaceId } from '../types/index.js'
 import { assertTrustedDevice, getDeviceTrustSummary, type DeviceTrustSummary } from './deviceTrustService.js'
+import { isIdentityRegistered } from './identityRegistrationService.js'
 
 export type AnonymousIdentityStatus = 'active' | 'archived'
 export type AnonymousDmPolicy = 'off' | 'requests' | 'para-verified'
@@ -697,4 +698,58 @@ function boundedCount(value: number) {
 
 function appError(message: string, statusCode: number, code: string) {
   return Object.assign(new Error(message), { statusCode, code })
+}
+
+/*
+ * F2b bridge (CD-9): anchor an anonymous identity to its registered public key,
+ * and resolve one by that key instead of by session.
+ *
+ * These are the seam for the session -> proof-of-possession cutover. They are
+ * added alongside the session-scoped functions above, not in place of them: the
+ * live anonymous surface keeps working through `session_id` until the client
+ * sends a proof of possession and the dependent tables (posts, germ, follows)
+ * re-anchor. Only then does the `session_id` foreign key go.
+ */
+
+/**
+ * Stamp an already-created anonymous identity with the registered public key it
+ * belongs to. During the transition this still takes a `sessionId` to locate
+ * the row and confirm ownership; the key must already be registered
+ * (`registered_identities`) so a caller cannot claim an unproven key.
+ *
+ * Idempotent for the same (identity, key). Rejects re-pointing an identity at a
+ * different key, or stamping a key that is already bound to another identity
+ * (the partial unique index enforces the latter at the storage layer too).
+ */
+export function linkRegisteredKey(
+  sessionId: string,
+  identityId: string,
+  identityPub: string,
+): void {
+  if (!isIdentityRegistered(identityPub)) {
+    throw appError('Identity public key is not registered', 400, 'IDENTITY_PUB_NOT_REGISTERED')
+  }
+  const row = requireAnonymousIdentityRow(sessionId, identityId)
+  const current = (row.identity_pub as string | null) ?? null
+  if (current === identityPub) return
+  if (current) {
+    throw appError('Anonymous identity is already bound to a different key', 409, 'IDENTITY_PUB_CONFLICT')
+  }
+  const db = getDb()
+  db.prepare('UPDATE anonymous_identities SET identity_pub = ?, updated_at = ? WHERE id = ? AND session_id = ?')
+    .run(identityPub, new Date().toISOString(), identityId, sessionId)
+}
+
+/**
+ * Resolve an anonymous identity by its registered public key, with no session.
+ * This is the read path the cutover moves onto: it returns the raw row (callers
+ * that need a session-scoped card still use the session functions during the
+ * transition). Returns undefined for an unbound or unknown key.
+ */
+export function findAnonymousIdentityRowByPub(
+  identityPub: string,
+): Record<string, unknown> | undefined {
+  return getDb()
+    .prepare('SELECT * FROM anonymous_identities WHERE identity_pub = ?')
+    .get(identityPub) as Record<string, unknown> | undefined
 }

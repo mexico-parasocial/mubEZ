@@ -170,3 +170,93 @@ describe('identity registration (CD-9)', () => {
     assert.deepEqual(result, { ok: false, reason: 'bad-proof' })
   })
 })
+
+describe('anonymous identity bridge to a registered key (F2b)', () => {
+  let regSvc: typeof import('../../src/services/identityRegistrationService.js')
+  let anonSvc: typeof import('../../src/services/anonymousIdentityService.js')
+  let getDb: typeof import('../../src/db/connection.js').getDb
+
+  const SESSION = 'session-bridge-1'
+  const OTHER_SESSION = 'session-bridge-2'
+  const pubA = bytesToHex(sr25519PublicKey(SCALAR_A))
+  const pubB = bytesToHex(sr25519PublicKey(SCALAR_B))
+
+  before(async () => {
+    ;({ getDb } = await import('../../src/db/connection.js'))
+    regSvc = await import('../../src/services/identityRegistrationService.js')
+    anonSvc = await import('../../src/services/anonymousIdentityService.js')
+
+    // Two sessions to hang the (still session-scoped, during transition)
+    // anonymous rows off. Direct inserts keep this test independent of the
+    // session-creation flow.
+    const db = getDb()
+    const now = new Date().toISOString()
+    for (const s of [SESSION, OTHER_SESSION]) {
+      db.prepare(`
+        INSERT INTO sessions
+          (session_id, did, handle, display_name, authorization_server, authenticated_at, pds_safety_json, active_persona_id, active_surface_id, created_at, updated_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, '{}', 'orbit', 'public', ?, ?, 'active')
+      `).run(s, `did:plc:${s}`, `${s}.test`, `${s}.test`, 'https://pds.test', now, now, now)
+    }
+    // SCALAR_A and SCALAR_B are registered by the suite above; ensure it here
+    // too so this describe block is order-independent.
+    for (const scalar of [SCALAR_A, SCALAR_B]) {
+      const ch = regSvc.issueRegistrationChallenge()
+      const pub = bytesToHex(sr25519PublicKey(scalar))
+      const assertion = {
+        type: 'para.identity.pop.v1' as const,
+        purpose: 'mubez-registration' as const,
+        audience: regSvc.REGISTRATION_AUDIENCE,
+        identityPub: pub,
+        challenge: ch,
+        signedAt: new Date().toISOString(),
+      }
+      regSvc.registerIdentity({ assertion, signature: signAssertion(scalar, assertion) })
+    }
+  })
+
+  it('links a registered key to an identity and resolves it back by key', () => {
+    const identity = anonSvc.createAnonymousIdentity(SESSION, {
+      displayName: 'Bridge test',
+    })
+    // Unbound: not findable by key yet.
+    assert.equal(anonSvc.findAnonymousIdentityRowByPub(pubA), undefined)
+
+    anonSvc.linkRegisteredKey(SESSION, identity.id, pubA)
+    const row = anonSvc.findAnonymousIdentityRowByPub(pubA)
+    assert.ok(row)
+    assert.equal(row.id, identity.id)
+    assert.equal(row.identity_pub, pubA)
+  })
+
+  it('is idempotent for the same (identity, key)', () => {
+    const row = anonSvc.findAnonymousIdentityRowByPub(pubA)!
+    assert.doesNotThrow(() =>
+      anonSvc.linkRegisteredKey(SESSION, row.id as string, pubA),
+    )
+  })
+
+  it('refuses to stamp a key that was never registered', () => {
+    const identity = anonSvc.createAnonymousIdentity(SESSION, {})
+    const unregistered = 'ff'.repeat(32)
+    assert.throws(
+      () => anonSvc.linkRegisteredKey(SESSION, identity.id, unregistered),
+      /not registered/i,
+    )
+  })
+
+  it('refuses to re-point an identity at a different key', () => {
+    const row = anonSvc.findAnonymousIdentityRowByPub(pubA)!
+    assert.throws(
+      () => anonSvc.linkRegisteredKey(SESSION, row.id as string, pubB),
+      /different key/i,
+    )
+  })
+
+  it('refuses to bind one key to two identities (partial unique index)', () => {
+    // pubA is already bound to an identity in SESSION; a second identity must
+    // not be able to claim it.
+    const identity = anonSvc.createAnonymousIdentity(OTHER_SESSION, {})
+    assert.throws(() => anonSvc.linkRegisteredKey(OTHER_SESSION, identity.id, pubA))
+  })
+})
