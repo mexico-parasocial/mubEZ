@@ -123,4 +123,26 @@ describe('anonymous identity create with proof (F2b)', () => {
     // An unknown key resolves to nothing.
     assert.equal(anon.getAnonymousIdentityByKey(SESSION, 'cc'.repeat(32)), null)
   })
+
+  it('link-post authorizes by key: owning key links, wrong key is refused', () => {
+    const owned = anon.findAnonymousIdentityRowByPub(pub)!
+    const identityId = owned.id as string
+
+    const linked = anon.linkAnonymousPost(SESSION, {
+      identityId,
+      postUri: 'at://did:plc:createproof/app.bsky.feed.post/p1',
+      requireIdentityPub: pub,
+    })
+    assert.equal(linked.post.identityId, identityId)
+
+    assert.throws(
+      () =>
+        anon.linkAnonymousPost(SESSION, {
+          identityId,
+          postUri: 'at://did:plc:createproof/app.bsky.feed.post/p2',
+          requireIdentityPub: 'bb'.repeat(32),
+        }),
+      /KEY_MISMATCH|does not match/i,
+    )
+  })
 })

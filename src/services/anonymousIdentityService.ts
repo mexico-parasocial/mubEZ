@@ -225,11 +225,27 @@ export function linkAnonymousPost(sessionId: string, input: {
   communityUri?: string | null
   postType?: string
   stats?: Partial<Omit<AnonymousPostStats, 'syncedAt'>>
+  /**
+   * When the caller proved possession of a key (F2b / CD-10), the identity the
+   * post is linked to must be anchored to it. Additive: absent means the legacy
+   * session-only path.
+   */
+  requireIdentityPub?: string
 }): { post: AnonymousIdentityPost; rotatedIdentity: AnonymousIdentityCard | null } {
   const db = getDb()
   const identity = input.identityId
     ? requireAnonymousIdentity(sessionId, input.identityId)
     : ensureDefaultAnonymousIdentity(sessionId)
+  if (input.requireIdentityPub) {
+    const row = requireAnonymousIdentityRow(sessionId, identity.id)
+    if (row.identity_pub !== input.requireIdentityPub) {
+      throw appError(
+        'Identity proof does not match this identity',
+        403,
+        'ANONYMOUS_IDENTITY_KEY_MISMATCH',
+      )
+    }
+  }
   if (identity.status === 'archived') {
     throw appError('Archived anonymous identity cannot be used', 409, 'ANONYMOUS_IDENTITY_ARCHIVED')
   }

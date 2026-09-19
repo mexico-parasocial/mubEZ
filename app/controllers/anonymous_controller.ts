@@ -89,6 +89,7 @@ const linkPostSchema = z
       })
       .strict()
       .optional(),
+    proof: actionProofSchema.optional(),
   })
   .strict()
 
@@ -210,7 +211,22 @@ export default class AnonymousController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, linkPostSchema)
     if (!body) return
-    const result = linkAnonymousPost(sessionId, body)
+
+    const { proof, ...input } = body
+    let requireIdentityPub: string | undefined
+    if (proof) {
+      const result = verifyAnonymousActionProof({
+        signed: proof.signed,
+        jti: proof.jti,
+        action: `link-post:${input.postUri}`,
+      })
+      if (!result.ok) {
+        return ctx.response.status(401).send({ error: 'Invalid identity proof' })
+      }
+      requireIdentityPub = result.identityPub
+    }
+
+    const result = linkAnonymousPost(sessionId, { ...input, requireIdentityPub })
     return ctx.response.status(201).send({ post: result.post, rotatedIdentity: result.rotatedIdentity })
   }
 
