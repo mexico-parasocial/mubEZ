@@ -119,6 +119,13 @@ export function createAnonymousIdentity(sessionId: string, input: {
   surface?: ProofBrokerSurfaceId
   communityUri?: string | null
   burnAfter?: 'none' | 'post'
+  /**
+   * The registered identity key this row is anchored to, when the caller
+   * proved possession of it (F2b / CD-10). Optional during the additive
+   * transition: absent means the legacy session-scoped path. When present the
+   * row is stamped, so it can later be resolved by key instead of session.
+   */
+  identityPub?: string
 }): AnonymousIdentityCard {
   const db = getDb()
   const now = new Date().toISOString()
@@ -129,8 +136,8 @@ export function createAnonymousIdentity(sessionId: string, input: {
 
   db.prepare(`
     INSERT INTO anonymous_identities
-      (id, session_id, display_name, avatar_seed, nullifier_secret_hash, surface, community_uri, status, burn_after, device_trust_state, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, session_id, display_name, avatar_seed, nullifier_secret_hash, surface, community_uri, status, burn_after, device_trust_state, identity_pub, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     sessionId,
@@ -142,6 +149,7 @@ export function createAnonymousIdentity(sessionId: string, input: {
     'active',
     input.burnAfter ?? 'none',
     getDeviceTrustSummary(sessionId).status,
+    input.identityPub ?? null,
     now,
     now,
   )

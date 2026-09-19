@@ -29,6 +29,9 @@ router
     // recreate the linkage the identity scheme removes.
     router.post('/identity/register/challenge', '#controllers/identity_registration_controller.challenge')
     router.post('/identity/register', '#controllers/identity_registration_controller.register')
+    // Per-mutation proof-of-possession challenge (CD-10), public and
+    // session-unbound like registration.
+    router.post('/identity/action-challenge', '#controllers/identity_registration_controller.actionChallenge')
 
     router.get('/anonymous/public-contact', '#controllers/anonymous_controller.publicContact')
     router.get('/pajareo/representatives/:representativeId', '#controllers/pajareo_controller.representative')

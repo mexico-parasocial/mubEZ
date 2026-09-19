@@ -20,8 +20,36 @@ import {
   unfollowAnonymousProfile,
 } from '../../src/services/anonymousFollowService.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
+import { verifyAnonymousActionProof } from '../../src/services/anonymousActionProof.js'
 
 const surfaceSchema = z.enum(['public', 'civic', 'dating'])
+
+// F2b / CD-10: an optional per-request proof of possession of the anonymous
+// identity key. When present it authorizes the mutation by key rather than only
+// by session, and anchors the row to that key. Optional during the additive
+// transition; the session path still works when it is absent.
+const hex = (bytes: number) =>
+  z.string().regex(new RegExp(`^[0-9a-f]{${bytes * 2}}$`), `expected ${bytes}-byte hex`)
+const actionProofSchema = z
+  .object({
+    signed: z
+      .object({
+        assertion: z
+          .object({
+            type: z.literal('para.identity.pop.v1'),
+            purpose: z.literal('anon-action'),
+            audience: z.string().min(1).max(256),
+            identityPub: hex(32),
+            challenge: z.string().min(1).max(512),
+            signedAt: z.string().min(1).max(64),
+          })
+          .strict(),
+        signature: hex(64),
+      })
+      .strict(),
+    jti: z.string().min(1).max(256),
+  })
+  .strict()
 
 const createIdentitySchema = z
   .object({
@@ -29,6 +57,7 @@ const createIdentitySchema = z
     surface: surfaceSchema.optional(),
     communityUri: z.string().min(1).max(512).nullable().optional(),
     burnAfter: z.enum(['none', 'post']).optional(),
+    proof: actionProofSchema.optional(),
   })
   .strict()
 
@@ -101,7 +130,28 @@ export default class AnonymousController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, createIdentitySchema)
     if (!body) return
-    return ctx.response.status(201).send({ identity: createAnonymousIdentity(sessionId, body) })
+
+    // F2b / CD-10: if the client proves possession of its anonymous key, verify
+    // the proof and anchor the new row to that key. A bad proof is rejected
+    // rather than falling back to the session path — a caller that sends a proof
+    // is asserting a key, and we do not silently ignore a failed assertion.
+    const { proof, ...input } = body
+    let identityPub: string | undefined
+    if (proof) {
+      const result = verifyAnonymousActionProof({
+        signed: proof.signed,
+        jti: proof.jti,
+        action: 'create',
+      })
+      if (!result.ok) {
+        return ctx.response.status(401).send({ error: 'Invalid identity proof' })
+      }
+      identityPub = result.identityPub
+    }
+
+    return ctx.response
+      .status(201)
+      .send({ identity: createAnonymousIdentity(sessionId, { ...input, identityPub }) })
   }
 
   async updateIdentity(ctx: HttpContext) {
