@@ -181,8 +181,21 @@ export function updateAnonymousIdentity(sessionId: string, identityId: string, i
   displayName?: string
   status?: AnonymousIdentityStatus
   burnAfter?: 'none' | 'post'
+  /**
+   * When the caller proved possession of a key (F2b / CD-10), the target row's
+   * `identity_pub` must equal it — authorization by key, on top of the session.
+   * Additive: absent means the legacy session-only check.
+   */
+  requireIdentityPub?: string
 }): AnonymousIdentityCard {
-  requireAnonymousIdentityRow(sessionId, identityId)
+  const row = requireAnonymousIdentityRow(sessionId, identityId)
+  if (input.requireIdentityPub && row.identity_pub !== input.requireIdentityPub) {
+    throw appError(
+      'Identity proof does not match this identity',
+      403,
+      'ANONYMOUS_IDENTITY_KEY_MISMATCH',
+    )
+  }
   const db = getDb()
   const existing = requireAnonymousIdentity(sessionId, identityId)
   const status = input.status ?? existing.status

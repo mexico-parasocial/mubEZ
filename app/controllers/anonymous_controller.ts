@@ -66,6 +66,7 @@ const updateIdentitySchema = z
     displayName: z.string().min(1).max(80).optional(),
     status: z.enum(['active', 'archived']).optional(),
     burnAfter: z.enum(['none', 'post']).optional(),
+    proof: actionProofSchema.optional(),
   })
   .strict()
 
@@ -158,7 +159,24 @@ export default class AnonymousController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, updateIdentitySchema)
     if (!body) return
-    return ctx.response.send({ identity: updateAnonymousIdentity(sessionId, ctx.params.id, body) })
+
+    const { proof, ...input } = body
+    let requireIdentityPub: string | undefined
+    if (proof) {
+      const result = verifyAnonymousActionProof({
+        signed: proof.signed,
+        jti: proof.jti,
+        action: `update:${ctx.params.id}`,
+      })
+      if (!result.ok) {
+        return ctx.response.status(401).send({ error: 'Invalid identity proof' })
+      }
+      requireIdentityPub = result.identityPub
+    }
+
+    return ctx.response.send({
+      identity: updateAnonymousIdentity(sessionId, ctx.params.id, { ...input, requireIdentityPub }),
+    })
   }
 
   async linkPost(ctx: HttpContext) {

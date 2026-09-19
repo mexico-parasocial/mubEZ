@@ -88,4 +88,29 @@ describe('anonymous identity create with proof (F2b)', () => {
       .get(identity.id) as { identity_pub: string | null }
     assert.equal(row.identity_pub, null)
   })
+
+  it('update authorizes by key: proof for the owning key succeeds, another key is refused', () => {
+    // Reuse the identity anchored to `pub` in the first test (one key ↔ one row).
+    const owned = anon.findAnonymousIdentityRowByPub(pub)
+    assert.ok(owned, 'expected the key-anchored identity from the first test')
+    const identityId = owned.id as string
+
+    // The owning key updates it.
+    const updated = anon.updateAnonymousIdentity(SESSION, identityId, {
+      displayName: 'Renamed by key',
+      requireIdentityPub: pub,
+    })
+    assert.equal(updated.displayName, 'Renamed by key')
+
+    // A different key is refused with a key mismatch.
+    const otherPub = 'bb'.repeat(32)
+    assert.throws(
+      () =>
+        anon.updateAnonymousIdentity(SESSION, identityId, {
+          displayName: 'Hijacked',
+          requireIdentityPub: otherPub,
+        }),
+      /KEY_MISMATCH|does not match/i,
+    )
+  })
 })
