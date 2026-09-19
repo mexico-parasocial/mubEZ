@@ -145,4 +145,36 @@ describe('anonymous identity create with proof (F2b)', () => {
       /KEY_MISMATCH|does not match/i,
     )
   })
+
+  it('germ link/unlink authorize by key', async () => {
+    const identityId = anon.findAnonymousIdentityRowByPub(pub)!.id as string
+    // Germ linking requires a trusted device (anti-abuse, a 🟢 session use).
+    const { upsertDevelopmentTrustedDevice } = await import(
+      '../../src/services/deviceTrustService.js'
+    )
+    upsertDevelopmentTrustedDevice(SESSION, { platform: 'ios', deviceKeyId: 'dev-key-1' })
+
+    const germ = anon.linkGermContact(SESSION, identityId, {
+      contactUrl: 'https://germ.example/c/abc',
+      requireIdentityPub: pub,
+    })
+    assert.equal(germ.status, 'active')
+
+    assert.throws(
+      () =>
+        anon.linkGermContact(SESSION, identityId, {
+          contactUrl: 'https://germ.example/c/def',
+          requireIdentityPub: 'bb'.repeat(32),
+        }),
+      /KEY_MISMATCH|does not match/i,
+    )
+
+    // Unlink with the owning key succeeds; wrong key is refused.
+    assert.throws(
+      () => anon.unlinkGermContact(SESSION, identityId, 'bb'.repeat(32)),
+      /KEY_MISMATCH|does not match/i,
+    )
+    const revoked = anon.unlinkGermContact(SESSION, identityId, pub)
+    assert.equal(revoked?.status, 'revoked')
+  })
 })

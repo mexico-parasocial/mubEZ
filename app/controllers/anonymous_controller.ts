@@ -114,8 +114,11 @@ const germLinkSchema = z
     contactUrl: z.string().url().max(2047),
     providerRef: z.string().max(512).optional(),
     mode: z.enum(['germ-card-link', 'm8-relay-pending-germ']).optional(),
+    proof: actionProofSchema.optional(),
   })
   .strict()
+
+const germUnlinkSchema = z.object({ proof: actionProofSchema.optional() }).strict()
 
 const devTrustSchema = z
   .object({
@@ -248,12 +251,45 @@ export default class AnonymousController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, germLinkSchema)
     if (!body) return
-    return ctx.response.send({ germ: linkGermContact(sessionId, ctx.params.id, body) })
+
+    const { proof, ...input } = body
+    let requireIdentityPub: string | undefined
+    if (proof) {
+      const result = verifyAnonymousActionProof({
+        signed: proof.signed,
+        jti: proof.jti,
+        action: `germ-link:${ctx.params.id}`,
+      })
+      if (!result.ok) {
+        return ctx.response.status(401).send({ error: 'Invalid identity proof' })
+      }
+      requireIdentityPub = result.identityPub
+    }
+
+    return ctx.response.send({
+      germ: linkGermContact(sessionId, ctx.params.id, { ...input, requireIdentityPub }),
+    })
   }
 
   async unlinkGerm(ctx: HttpContext) {
     const sessionId = getSessionId(ctx)
-    return ctx.response.send({ germ: unlinkGermContact(sessionId, ctx.params.id) })
+    const body = validateBody(ctx, germUnlinkSchema)
+    if (!body) return
+
+    let requireIdentityPub: string | undefined
+    if (body.proof) {
+      const result = verifyAnonymousActionProof({
+        signed: body.proof.signed,
+        jti: body.proof.jti,
+        action: `germ-unlink:${ctx.params.id}`,
+      })
+      if (!result.ok) {
+        return ctx.response.status(401).send({ error: 'Invalid identity proof' })
+      }
+      requireIdentityPub = result.identityPub
+    }
+
+    return ctx.response.send({ germ: unlinkGermContact(sessionId, ctx.params.id, requireIdentityPub) })
   }
 
   async publicContact(ctx: HttpContext) {

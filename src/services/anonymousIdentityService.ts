@@ -357,9 +357,21 @@ export function linkGermContact(sessionId: string, identityId: string, input: {
   contactUrl: string
   providerRef?: string
   mode?: AnonymousGermMode
+  /** F2b / CD-10: when set, the target identity's key must equal it. */
+  requireIdentityPub?: string
 }): AnonymousGermConnection {
   assertTrustedDevice(sessionId, 'LinkAnonymousGermContact')
   const identity = requireAnonymousIdentity(sessionId, identityId)
+  if (input.requireIdentityPub) {
+    const row = requireAnonymousIdentityRow(sessionId, identityId)
+    if (row.identity_pub !== input.requireIdentityPub) {
+      throw appError(
+        'Identity proof does not match this identity',
+        403,
+        'ANONYMOUS_IDENTITY_KEY_MISMATCH',
+      )
+    }
+  }
   if (identity.status === 'archived') {
     throw appError('Archived anonymous identity cannot link Germ', 409, 'ANONYMOUS_IDENTITY_ARCHIVED')
   }
@@ -403,8 +415,22 @@ export function linkGermContact(sessionId: string, identityId: string, input: {
   return getActiveGermConnection(identityId)!
 }
 
-export function unlinkGermContact(sessionId: string, identityId: string): AnonymousGermConnection | null {
+export function unlinkGermContact(
+  sessionId: string,
+  identityId: string,
+  requireIdentityPub?: string,
+): AnonymousGermConnection | null {
   requireAnonymousIdentity(sessionId, identityId)
+  if (requireIdentityPub) {
+    const row = requireAnonymousIdentityRow(sessionId, identityId)
+    if (row.identity_pub !== requireIdentityPub) {
+      throw appError(
+        'Identity proof does not match this identity',
+        403,
+        'ANONYMOUS_IDENTITY_KEY_MISMATCH',
+      )
+    }
+  }
   const germ = getActiveGermConnection(identityId)
   if (!germ) return null
   const now = new Date().toISOString()
