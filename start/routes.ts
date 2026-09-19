@@ -54,6 +54,7 @@ router
 
         router.get('/anonymous/identities', '#controllers/anonymous_controller.identities')
         router.post('/anonymous/identities', '#controllers/anonymous_controller.createIdentity')
+        router.post('/anonymous/identities/resolve', '#controllers/anonymous_controller.resolveByKey')
         router.patch('/anonymous/identities/:id', '#controllers/anonymous_controller.updateIdentity')
         router.post('/anonymous/posts', '#controllers/anonymous_controller.linkPost')
         router.patch('/anonymous/posts/:id/dm-policy', '#controllers/anonymous_controller.updatePostDmPolicy')

@@ -758,3 +758,21 @@ export function findAnonymousIdentityRowByPub(
     .prepare('SELECT * FROM anonymous_identities WHERE identity_pub = ?')
     .get(identityPub) as Record<string, unknown> | undefined
 }
+
+/**
+ * Resolve the anonymous identity anchored to a proven key (F2b / CD-10).
+ *
+ * The row is found by `identity_pub` alone — no session — which is the linkage
+ * removal. The card is still hydrated with the session for its operational bits
+ * (device trust) and, until D1 lands, badges; those are the 🟢/🟡 session uses
+ * that stay for now (see F2B_SESSION_MIGRATION.md). Returns null when no
+ * identity is anchored to the key.
+ */
+export function getAnonymousIdentityByKey(
+  sessionId: string,
+  identityPub: string,
+): AnonymousIdentityCard | null {
+  const row = findAnonymousIdentityRowByPub(identityPub)
+  if (!row) return null
+  return hydrateIdentityCard(sessionId, row)
+}

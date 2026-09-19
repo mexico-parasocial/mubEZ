@@ -4,6 +4,7 @@ import { getSessionId, validateBody } from '#support/http'
 import {
   createAnonymousIdentity,
   getAnonymousContactEligibility,
+  getAnonymousIdentityByKey,
   getAnonymousPublicContact,
   linkAnonymousPost,
   linkGermContact,
@@ -60,6 +61,8 @@ const createIdentitySchema = z
     proof: actionProofSchema.optional(),
   })
   .strict()
+
+const resolveByKeySchema = z.object({ proof: actionProofSchema }).strict()
 
 const updateIdentitySchema = z
   .object({
@@ -153,6 +156,30 @@ export default class AnonymousController {
     return ctx.response
       .status(201)
       .send({ identity: createAnonymousIdentity(sessionId, { ...input, identityPub }) })
+  }
+
+  /**
+   * Resolve the caller's anonymous identity by proof of possession (F2b /
+   * CD-10): the row is found by the proven key, not the session. Returns 404
+   * when no identity is anchored to the key yet.
+   */
+  async resolveByKey(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    const body = validateBody(ctx, resolveByKeySchema)
+    if (!body) return
+    const result = verifyAnonymousActionProof({
+      signed: body.proof.signed,
+      jti: body.proof.jti,
+      action: 'resolve',
+    })
+    if (!result.ok) {
+      return ctx.response.status(401).send({ error: 'Invalid identity proof' })
+    }
+    const identity = getAnonymousIdentityByKey(sessionId, result.identityPub)
+    if (!identity) {
+      return ctx.response.status(404).send({ error: 'No identity for this key' })
+    }
+    return ctx.response.send({ identity })
   }
 
   async updateIdentity(ctx: HttpContext) {

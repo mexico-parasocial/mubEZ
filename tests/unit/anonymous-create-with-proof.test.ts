@@ -113,4 +113,14 @@ describe('anonymous identity create with proof (F2b)', () => {
       /KEY_MISMATCH|does not match/i,
     )
   })
+
+  it('resolves an identity by key alone (no session in the lookup)', () => {
+    const card = anon.getAnonymousIdentityByKey(SESSION, pub)
+    assert.ok(card, 'the key-anchored identity resolves by key')
+    // It resolved to the row anchored to `pub`.
+    const byKey = anon.findAnonymousIdentityRowByPub(pub)
+    assert.equal(card.id, byKey!.id)
+    // An unknown key resolves to nothing.
+    assert.equal(anon.getAnonymousIdentityByKey(SESSION, 'cc'.repeat(32)), null)
+  })
 })
