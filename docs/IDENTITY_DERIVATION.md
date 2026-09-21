@@ -73,6 +73,13 @@ so this contract is the target, not the current state. CD-9 records the decision
 and the migration; the ballot identity (`civic`) is excluded here per OD-7
 Reading A.
 
+`person_roots` and `person_aliases` are the same defect on the civic vote path,
+and are named here because they were not: `issueCivicVoteProof` keys the person
+root by `session_id` and writes the session's **account DID** into
+`person_aliases`, so a civic pseudonym linked afterwards shares a row key with
+the user's public-facing identity. The rule below is not amended to allow it —
+CD-12 resolves it the other way and lists what has to change.
+
 - The client registers each identity by sending only `identity_pub_i` and a
   signature over the registration challenge with `identity_priv_i`
   (proof of possession). **The scheme is specified in

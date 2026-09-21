@@ -485,3 +485,195 @@ binding), OD-7 (ballot key never signs). Reference implementations:
 `WatZappa-permissioned-data/packages/pds/src/account-manager/m8-assurance-store.ts`
 and `.../m8-assurance-verifier.ts`. Device-session lineage: tranquil-pds
 (`WatZappa/services/matrix-bridge/.../identity-matrix.ts`).
+
+---
+
+## CD-11 — Votes bind to the civic pseudonym; m8 holds no legal identity
+
+**Decision.** A vote is attributable to a person's **civic pseudonym** and to
+nothing else. Browsing that pseudonym and seeing how it voted on other subjects
+is accepted: an accumulated voting history under one pseudonym is not treated as
+a leak. What must never be reachable is the legal identity behind it — real
+name, CURP, INE or any other document.
+
+That reduces to one invariant, and it is stated as one line so it can be tested
+and watched in review:
+
+> **`person_roots.id` must never become linkable to a legal identity.**
+
+Three rules follow.
+
+1. **An identity check yields claims and discards its inputs.** No raw
+   credential — name, CURP, document image — is written to any table, log, queue
+   or object store, not even transiently "pending review". The permitted output
+   is the claim set already declared in `src/types/index.ts`: `age_over_18`,
+   `age_over_21`, `citizenship`, `district_hash`, `curp_hash`,
+   `verified_public_figure`.
+2. **`curp_hash` stays peppered.** Already decided and built — CD-1,
+   `src/services/curpHash.ts`. Recorded here because it is load-bearing for this
+   decision rather than incidental to it: an unpeppered CURP hash is enumerable
+   offline, which would make the invariant false the moment the database leaked.
+3. **`civic` keeps its own key.** It gains the pseudonymous profile people
+   browse; it does not merge with `anonymous`.
+
+**Problem.** The privacy target was previously the maximum-privacy reading of
+OD-7 §5b — ballots unlinkable even to the server, via Pedersen commitments,
+range proofs and CLSAG rings. That is a 2027-scale programme and it was blocking
+a pilot that needs to run this year. A smaller target was set deliberately
+(OD-7 §5g).
+
+The second half of the problem is that the schema **already satisfies most of
+this, by accident rather than by rule**. `mubEZ/src/db/schema.sql` has no column
+holding a name, a CURP or a document; `person_roots` is `id`, `session_id`,
+`status` and timestamps. Nothing states that it must stay that way, and the
+breaking point is identifiable: the day `src/services/ineSimulation.ts` is
+replaced by a real INE integration, something will want to persist a document,
+and if it lands beside `person_id` the model collapses at once rather than
+gradually.
+
+**Rejected alternatives.**
+
+- *Merging the `civic` and `anonymous` keys* to make "civic is anonymous by
+  default" literally true. `OD-2-PROOF-OF-POSSESSION.md` §6.5 makes "the ballot
+  identity must never sign" its most important review point, and
+  `isMatrixIdentityLabel` enforces it by allowing only `public` and `anonymous`.
+  Merging would make the key that votes the key that authenticates to Matrix,
+  handing it to the chat server. Giving `civic` the visible profile achieves the
+  same product intent — one persona the user sees — without moving key material
+  across that boundary.
+- *Commitments now (§5b).* Unnecessary under the accepted threat model, and it
+  would delay the pilot by a programme rather than a sprint. Deferred, not
+  abandoned: the ballot format must still not foreclose it.
+- *Storing the credential briefly, "pending review".* There is no transient
+  store that survives contact with a backup, a log shipper or an incident. The
+  rule is written as "never" because "briefly" is unenforceable.
+- *A per-user privacy toggle over a record written to the person's own repo.*
+  A flag cannot make a published record private: an atproto record is signed by
+  its author's DID and sequenced to the firehose, and cannot be unpublished.
+  Choosing how much to share has to select **which write happens**, not annotate
+  a public one.
+
+**Consequences.** The joins m8 holds — `person_aliases` mapping `person_id` to a
+DID, and `civic_vote_nullifiers` mapping `person_id` to every subject voted on —
+become **acceptable** under this decision, because the person root carries no
+legal identity to join them to.
+
+That is a real change of posture and it contradicts something still written
+down: `docs/IDENTITY_DERIVATION.md` forbids any table relating an identity key
+to a session, and OD-7 §6 treats `anonymous_identities.session_id` as a defect
+to remove across 28 call sites. Under CD-11 those joins are tolerated rather
+than forbidden. **Both cannot stand.** Either `IDENTITY_DERIVATION.md` is
+amended to say the linkage is permitted while the person root stays anonymous,
+or the joins go as originally planned. Left open here deliberately rather than
+resolved in passing; whoever takes it should decide it as its own entry.
+
+Residual risk, to be carried into `THREAT_MODEL.md`: under this model a breach
+of m8 does not reveal who voted what, because m8 does not know who anyone is —
+but it does reveal the full voting history of every pseudonym, and any future
+component that learns a legal identity for a `person_roots.id` retroactively
+de-anonymises all of it. The invariant is the whole guarantee; there is no
+second line behind it.
+
+**Superseded in part by CD-12.** The Consequences paragraph above is wrong: the
+joins are not acceptable, because `person_aliases` holds the user's account DID,
+written on the vote path itself. The invariant and rules 1-3 stand; CD-12 is
+what makes them true.
+
+**Related.** OD-7 §5g (the decision as taken, with what was verified), CD-1
+(peppered hashing), CD-9 (registration), OD-2 §6.5 (the ballot key never signs).
+Trigger point for rule 1: `src/services/ineSimulation.ts`.
+
+---
+
+## CD-12 — The no-linkage rule stands; `person_aliases` is the defect
+
+**Decision.** `docs/IDENTITY_DERIVATION.md` keeps its rule unamended: *no table
+may relate two identity public keys, or an identity key to a seed, view key, or
+another identity's session.* The contradiction left open in CD-11 is resolved
+**against CD-11**. The joins m8 holds today are not acceptable, and CD-11's
+Consequences paragraph — which called them tolerable because the person root
+carries no legal identity — is withdrawn.
+
+**Problem.** CD-11 reasoned from the shape of the schema. Reading the code that
+writes it gives a different answer.
+
+`issueCivicVoteProof` in `src/services/civicVoteIdentityService.ts` does three
+things in sequence: `ensurePersonRoot(sessionId)` creates a person root keyed
+`UNIQUE` by `session_id`; `ensureSessionAlias(person.id, sessionId, session)`
+writes **the session's own account DID** into `person_aliases`; and
+`listActiveAliasDids(person.id)` returns every alias of that person, which is
+handed back in the response.
+
+So on the vote path itself, m8 links the person root to the user's
+public-facing PARA identity — index 0, the one with a handle and a profile, the
+one where a person may put their real name. Any civic pseudonym linked
+afterwards shares `person_id` with it.
+
+That does not merely break the older rule. **It falsifies CD-11's own
+invariant.** `person_roots.id` is linkable to a legal identity today, by one
+join: `person_aliases` → account DID → public profile. CD-11 accepted a
+browsable pseudonymous voting history on the premise that nothing joins the
+pseudonym to a name. The premise is currently false.
+
+**Rejected alternatives.**
+
+- *Amend `IDENTITY_DERIVATION.md` to permit the linkage while the person root
+  stays anonymous* — the option CD-11 floated. Rejected because the linkage in
+  the code is not pseudonym-to-anonymous-root; it is pseudonym-to-account, which
+  is precisely the path by which a voting history acquires a name. Amending
+  would make the rule agree with the code by lowering the rule to whatever the
+  code happens to do.
+- *Keep `alias_did` for auditability.* One person, one vote needs
+  `person_roots.id` and `UNIQUE (person_id, subject_type, subject_uri)` and
+  nothing else. OD-7 §5a already established that authorisation runs on
+  `person.id` and that `identity_pub_civic` is never presented, so the DID
+  columns are observational, not functional. §5a.4 says `aliasDid` has to go on
+  its own merits.
+- *Fix it after the pilot.* The rows are written on every vote-proof issuance.
+  A table of them accumulates whether or not anyone has decided what it is for,
+  and deleting it later does not unlink what was already observed.
+
+**Consequences.** Four changes, none of which need new cryptography — the
+mechanisms are all decided already:
+
+1. `person_roots` stops being keyed by `session_id`. Identifying the person on a
+   request is per-request proof of possession, which is **CD-10**'s mechanism,
+   decided for the anonymous surface and not yet applied here.
+2. `ensureSessionAlias` is deleted. The account DID never enters
+   `person_aliases`.
+3. `civic_vote_nullifiers` drops `session_id` and `alias_did` (OD-7 §5a.4).
+4. `listActiveAliasDids` stops returning a correlation set to its caller.
+
+Until those land, the privacy property described in CD-11 is not the one the
+system has. That belongs in `THREAT_MODEL.md` as a **current-state gap**, not as
+residual risk — the difference matters, because residual risk reads as
+"accepted" and this is not accepted, only unfixed.
+
+**Supersedes.** The Consequences paragraph of CD-11 (the joins being acceptable).
+The rest of CD-11 — the invariant, claims-never-rows, `civic` keeping its own
+key — stands unchanged, and CD-12 is what makes the invariant true rather than
+aspirational.
+
+**Built 2026-09-21.** Consequences 2, 3 and 4 are done: `ensureSessionAlias` is
+gone, `civic_vote_nullifiers` and `person_aliases` lost their `session_id` and
+`alias_did` columns (migration 034), the proof no longer accepts or returns a
+DID, and the PARA client stopped sending `agent.session.did` (OD-7 §5a.4).
+
+Consequence 1 turned out to be hiding a correctness bug, fixed in the same pass.
+`person_roots.session_id UNIQUE` meant a second session minted a second person,
+and the only guard deduplicated on the ZK commitment — whose salt the client
+chooses — so re-enrolling produced a second person who could vote again on the
+same subject. **One person, one vote did not hold.** Migration 035 files person
+roots under `person_key` = HMAC(pepper, 'person-root' ‖ `curp_hash`), written
+onto the INE artifact at issuance, so every session of the same human resolves
+to one root. `tests/integration/civic-vote-identity.test.ts` pins it, and the
+test was confirmed to fail against the previous code.
+
+What is *not* done: the session is still one hop from the person, through
+`proof_artifacts.session_id`. The person is no longer **defined** by the session
+but is still **discoverable** from it, and closing that needs CD-10's
+per-request proof of possession on this path.
+
+**Related.** CD-10 (per-request PoP, the remaining hop), CD-1 (the deterministic
+`curp_hash` this anchors on), CD-9 (registration), OD-7 §5g and §6 (the 28 call
+sites), `IDENTITY_DERIVATION.md` (the rule that stands).
