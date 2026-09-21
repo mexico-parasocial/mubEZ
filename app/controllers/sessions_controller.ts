@@ -2,8 +2,13 @@ import { z } from 'zod'
 import type { HttpContext } from '@adonisjs/core/http'
 import env from '#start/env'
 import { getDb } from '../../src/db/connection.js'
-import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
+import { Features, assertDemoPathAllowed, isFeatureEnabled } from '../../src/services/features.js'
 import { completeOAuthCallback, initiateOAuthLogin, OAuthInitiateError } from '../../src/services/atprotoAuth.js'
+import {
+  ExchangeCodeError,
+  consumeExchangeCode,
+  createExchangeCode,
+} from '../../src/services/oauthExchangeCodes.js'
 import {
   completeOAuthLoginAttempt,
   createOAuthLoginAttempt,
@@ -24,7 +29,30 @@ import { getSessionId, t, validateBody } from '#support/http'
 const startSessionSchema = z.object({
   identifier: z.string().min(1).max(256),
   surface: z.enum(['public', 'civic', 'dating']).optional(),
+  platform: z.enum(['web', 'mobile']).optional(),
+  returnTo: z.string().min(1).max(256).optional(),
 })
+
+const exchangeCodeSchema = z.object({
+  code: z.string().min(16).max(256),
+})
+
+/**
+ * Native apps sign in via the system browser and come back through a
+ * deep-link redirect. Only URLs on this allowlist may be used as the return
+ * target — anything else is dropped so a caller can't phish tokens into a
+ * scheme it controls. Configure with OAUTH_RETURN_TO_ALLOWLIST (comma-separated).
+ */
+function resolveReturnTo(requested: string | undefined): string | null {
+  const allowlist = env.get('OAUTH_RETURN_TO_ALLOWLIST')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+  if (requested) {
+    return allowlist.includes(requested) ? requested : null
+  }
+  return allowlist[0] ?? null
+}
 
 export default class SessionsController {
   async start(ctx: HttpContext) {
@@ -102,6 +130,10 @@ export default class SessionsController {
         state: oauthLogin.state,
         oauthUrl: oauthLogin.url,
         scope: requestedScope,
+        returnTo:
+          body.platform === 'mobile' && isFeatureEnabled(Features.OAuthMobileHandoff)
+            ? resolveReturnTo(body.returnTo)
+            : null,
       })
 
       return ctx.response.status(202).send({
@@ -168,6 +200,20 @@ export default class SessionsController {
         sessionId: sessionRow.session_id,
       })
 
+      // Native-app handoff: never put bearer tokens in a URL or a page the
+      // system browser rendered. Hand the app a single-use exchange code and
+      // let it swap the code for a token bundle over the app's own channel.
+      if (attempt.returnTo && isFeatureEnabled(Features.OAuthMobileHandoff)) {
+        const exchange = createExchangeCode({
+          attemptId: attempt.id,
+          sessionId: sessionRow.session_id,
+        })
+        const separator = attempt.returnTo.includes('?') ? '&' : '?'
+        return ctx.response.status(302).redirect(
+          `${attempt.returnTo}${separator}exchange_code=${encodeURIComponent(exchange.code)}`
+        )
+      }
+
       return ctx.response.send({
         did: result.did,
         authenticated: true,
@@ -184,6 +230,51 @@ export default class SessionsController {
       }
       const message = error instanceof Error ? error.message : 'OAuth callback failed'
       return ctx.response.status(400).send({ error: message, code: 'OAUTH_CALLBACK_FAILED' })
+    }
+  }
+
+  /**
+   * Swaps a single-use deep-link exchange code for a token bundle. This is the
+   * mobile counterpart of the OAuth callback's JSON response: the code rides
+   * the deep link, the tokens never do.
+   */
+  async exchange(ctx: HttpContext) {
+    const body = validateBody(ctx, exchangeCodeSchema)
+    if (!body) return
+
+    let consumed: ReturnType<typeof consumeExchangeCode>
+    try {
+      consumed = consumeExchangeCode(body.code)
+    } catch (error) {
+      if (error instanceof ExchangeCodeError) {
+        const status = error.kind === 'reused' ? 403 : 400
+        const code = error.kind === 'reused' ? 'OAUTH_EXCHANGE_REUSED' : 'OAUTH_EXCHANGE_INVALID'
+        return ctx.response.status(status).send({
+          error: error.kind === 'reused' ? 'Exchange code already used' : 'Exchange code invalid or expired',
+          code,
+        })
+      }
+      throw error
+    }
+
+    try {
+      return ctx.response.send({
+        authenticated: true,
+        sessionId: consumed.sessionId,
+        session: hydrateSession(consumed.sessionId),
+        tokens: await issueTokenBundle(consumed.sessionId, {
+          source: 'oauth_exchange',
+          oauthAttemptId: consumed.attemptId,
+        }),
+      })
+    } catch (error) {
+      if (error instanceof TokenIssueError) {
+        return ctx.response.status(error.status ?? 400).send({
+          error: error.message,
+          code: 'OAUTH_EXCHANGE_SESSION_INVALID',
+        })
+      }
+      throw error
     }
   }
 

@@ -29,6 +29,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   PORT: zodEnv(z.coerce.number().int().min(1).max(65535).default(8787)),
   HOST: zodEnv(z.string().default('0.0.0.0')),
   SERVICE_URL: zodEnv(z.string().url().default('http://localhost:8787')),
+  OAUTH_RETURN_TO_ALLOWLIST: zodEnv(z.string().default('im8://oauth/callback')),
   DATABASE_PATH: zodEnv(z.string().default('./data/mubez.db')),
   DATABASE_AUTOMIGRATE: zodEnv(booleanEnv),
   JWT_SECRET: zodEnv(z.string().min(32).default(() => {
@@ -57,6 +58,15 @@ export default await Env.create(new URL('../', import.meta.url), {
     }
     return 'dev-cookie-secret-not-for-production'
   })),
+  CURP_PEPPER: zodEnv(z.string().min(32).default(() => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('CURP_PEPPER is required in production')
+    }
+    return 'dev-curp-pepper-do-not-use-in-production'
+  })),
+  CURP_PEPPER_KEY_ID: zodEnv(z.string().min(1).default('pepper-env-1')),
+  CURP_PEPPER_PREVIOUS: zodEnv(z.string().min(32).optional()),
+  CURP_PEPPER_PREVIOUS_KEY_ID: zodEnv(z.string().min(1).optional()),
   IDENTITY_ISSUER_DID: zodEnv(z.string().min(1).optional()),
   IDENTITY_ISSUER_PRIVATE_JWK: zodEnv(z.string().optional()),
   IDENTITY_ISSUER_PUBLIC_JWK: zodEnv(z.string().optional()),

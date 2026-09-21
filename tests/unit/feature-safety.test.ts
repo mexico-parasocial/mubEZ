@@ -9,6 +9,7 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}) {
     JWT_SECRET: 'production-jwt-secret-for-feature-safety',
     APP_KEY: 'production-app-key',
     COOKIE_SECRET: 'production-cookie-secret',
+    CURP_PEPPER: 'production-curp-pepper-for-feature-safety',
     IDENTITY_ISSUER_DID: 'did:m8:ine:test',
     IDENTITY_ISSUER_PRIVATE_JWK: undefined,
     IDENTITY_ISSUER_PUBLIC_JWK: undefined,

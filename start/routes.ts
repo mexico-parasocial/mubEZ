@@ -2,6 +2,7 @@ import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
 router.get('/.well-known/did.json', '#controllers/community/did_controller.webDid')
+router.get('/oauth-client-metadata.json', '#controllers/oauth_client_metadata_controller.show')
 
 router.get('/docs', '#controllers/docs_controller.scalar')
 router.get('/openapi.json', '#controllers/docs_controller.openapi')
@@ -13,6 +14,7 @@ router
 
     router.post('/sessions/start', '#controllers/sessions_controller.start')
     router.get('/sessions/oauth/callback', '#controllers/sessions_controller.oauthCallback')
+    router.post('/sessions/exchange', '#controllers/sessions_controller.exchange')
     router.post('/sessions/refresh', '#controllers/sessions_controller.refresh')
 
     router.get('/identity/crl', '#controllers/revocation_controller.crl')

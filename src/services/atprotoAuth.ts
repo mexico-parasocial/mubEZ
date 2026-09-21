@@ -115,17 +115,10 @@ export async function getOAuthClient(): Promise<NodeOAuthClient> {
     }
   }
 
-  const clientMetadata = {
-    client_name: 'Muvis',
-    client_uri: env.get('SERVICE_URL'),
-    redirect_uris: [`${env.get('SERVICE_URL')}/v1/sessions/oauth/callback`] as [string, ...string[]],
-    scope: MAX_OAUTH_SCOPE,
-    grant_types: ['authorization_code', 'refresh_token'] as ['authorization_code', 'refresh_token'],
-    response_types: ['code'] as ['code'],
-    token_endpoint_auth_method: (keyset ? 'private_key_jwt' : 'none') as 'private_key_jwt' | 'none',
-    application_type: 'web' as const,
-    dpop_bound_access_tokens: true,
-  }
+  // atproto OAuth clients must advertise a loopback IP, never "localhost"
+  // (RFC 8252 §7.3, enforced by @atproto/oauth-client metadata validation).
+  // buildClientMetadata() is the single source of truth for this identity.
+  const clientMetadata = buildClientMetadata()
 
   oauthClientInstance = new NodeOAuthClient({
     clientMetadata,
@@ -137,6 +130,49 @@ export async function getOAuthClient(): Promise<NodeOAuthClient> {
   })
 
   return oauthClientInstance
+}
+
+/**
+ * Single source of truth for the OAuth client identity: used both to build
+ * the NodeOAuthClient and to serve `GET /oauth-client-metadata.json`. The
+ * document a PDS fetches and the client we actually drive MUST agree.
+ */
+export function buildClientMetadata() {
+  // atproto OAuth clients must advertise a loopback IP, never "localhost"
+  // (RFC 8252 §7.3, enforced by @atproto/oauth-client metadata validation).
+  const serviceUrl = env.get('SERVICE_URL')
+  const callbackBase = serviceUrl.replace(/^http:\/\/localhost:/, 'http://127.0.0.1:')
+  // Dev loopback clients use the fixed dev client_id mandated by the atproto
+  // OAuth dev profile; https deployments must serve a real client_id document.
+  const isLoopbackDev = callbackBase.startsWith('http://127.0.0.1:')
+  const metadataUrl = `${callbackBase}/oauth-client-metadata.json`
+  const hasSigningKeys = hasValidPrivateKeys()
+
+  return {
+    client_id: isLoopbackDev ? 'http://localhost' : metadataUrl,
+    client_name: 'Muvis',
+    client_uri: serviceUrl,
+    redirect_uris: [`${callbackBase}/v1/sessions/oauth/callback`] as [string, ...string[]],
+    scope: MAX_OAUTH_SCOPE,
+    grant_types: ['authorization_code', 'refresh_token'] as ['authorization_code', 'refresh_token'],
+    response_types: ['code'] as ['code'],
+    token_endpoint_auth_method: (hasSigningKeys ? 'private_key_jwt' : 'none') as 'private_key_jwt' | 'none',
+    application_type: 'web' as const,
+    dpop_bound_access_tokens: true,
+  }
+}
+
+export type AtprotoClientMetadataDocument = ReturnType<typeof buildClientMetadata>
+
+function hasValidPrivateKeys(): boolean {
+  const raw = env.get('PRIVATE_KEYS')
+  if (!raw) return false
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.length > 0 : Boolean(parsed) && typeof parsed === 'object'
+  } catch {
+    return false
+  }
 }
 
 export async function initiateOAuthLogin(

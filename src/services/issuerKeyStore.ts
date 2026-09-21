@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto'
+import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
 
 export interface IssuerVerificationKey {
   did: string
@@ -15,15 +15,36 @@ export interface IssuerSigningKey {
   privateKey: KeyObject
 }
 
+/*
+ * Verification-side contract: public key material only. Signing is NOT part
+ * of this interface - it goes through IssuerSigner below, which never exposes
+ * private key material to callers. This split is what lets a KMS-backed
+ * signer replace the env-backed one without touching credential issuance code.
+ */
 export interface IssuerKeyStore {
-  /** Current signing key. Throws if not configured. */
-  getSigningKey(): IssuerSigningKey
   /** All keys that should be trusted for verification (current + previous, if not expired). */
   getTrustedVerificationKeys(): IssuerVerificationKey[]
   /** All configured public keys, including revoked or expired keys for metadata/audit. */
   getAllVerificationKeys(): IssuerVerificationKey[]
   /** Key ID of the current signing key. */
   currentKeyId(): string
+}
+
+export interface IssuerSignerInfo {
+  did: string
+  keyId: string
+  publicKeyPem: string
+}
+
+/**
+ * Sign-oriented issuer contract. Implementations perform the signature and
+ * never hand out the private key: the env-backed signer signs in-process, a
+ * KMS-backed signer calls the KMS Sign API with the same shape.
+ */
+export interface IssuerSigner {
+  getInfo(): Promise<IssuerSignerInfo>
+  /** Ed25519 signature over the raw payload bytes. */
+  sign(payload: Uint8Array): Promise<Uint8Array>
 }
 
 type ParsedKeyMaterial = {
@@ -122,6 +143,11 @@ export class EnvIssuerKeyStore implements IssuerKeyStore {
     }
   }
 
+  /**
+   * Implementation detail for EnvIssuerSigner and configuration asserts, not
+   * part of the IssuerKeyStore interface. Callers that need signatures must
+   * use IssuerSigner.
+   */
   getSigningKey(): IssuerSigningKey {
     if (!this._current) {
       throw new Error('No current signing key is configured')
@@ -174,8 +200,23 @@ export class EnvIssuerKeyStore implements IssuerKeyStore {
   }
 }
 
+export class EnvIssuerSigner implements IssuerSigner {
+  constructor(private readonly store: EnvIssuerKeyStore) {}
+
+  async getInfo(): Promise<IssuerSignerInfo> {
+    const key = this.store.getSigningKey()
+    return { did: key.did, keyId: key.keyId, publicKeyPem: key.publicKeyPem }
+  }
+
+  async sign(payload: Uint8Array): Promise<Uint8Array> {
+    const key = this.store.getSigningKey()
+    return sign(null, Buffer.from(payload), key.privateKey)
+  }
+}
+
 /** Shared singleton instance. */
 let _sharedStore: EnvIssuerKeyStore | null = null
+let _sharedSigner: IssuerSigner | null = null
 
 export function getSharedIssuerKeyStore(): EnvIssuerKeyStore {
   if (!_sharedStore) {
@@ -184,7 +225,15 @@ export function getSharedIssuerKeyStore(): EnvIssuerKeyStore {
   return _sharedStore
 }
 
-/** Reset the shared singleton (useful in tests). */
+export function getSharedIssuerSigner(): IssuerSigner {
+  if (!_sharedSigner) {
+    _sharedSigner = new EnvIssuerSigner(getSharedIssuerKeyStore())
+  }
+  return _sharedSigner
+}
+
+/** Reset the shared singletons (useful in tests). */
 export function resetSharedIssuerKeyStore(): void {
   _sharedStore = null
+  _sharedSigner = null
 }

@@ -34,11 +34,38 @@ If the current private key is lost without a backup:
 
 ## 4. KMS Migration Path
 
-1. Implement `IssuerKeyStore` adapter for your target KMS (GCP Cloud KMS, AWS KMS, HashiCorp Vault, HSM, etc.).
-2. The adapter implements:
-   - `getSigningKey()` — calls KMS to sign a digest, returns the public key material.
-   - `getTrustedVerificationKeys()` — returns cached public keys (current + previous).
-   - `currentKeyId()` — returns the current KMS key version/resource ID.
-3. Replace `EnvIssuerKeyStore` with the KMS adapter in `getSharedIssuerKeyStore()`.
+Signing and verification are split across two interfaces in
+`src/services/issuerKeyStore.ts`. The split exists precisely so a KMS can be
+dropped in: a KMS never releases private key material, so no caller may ever
+receive a private key.
+
+- **`IssuerSigner`** — the signing seam. Async by construction, because a KMS
+  signature is a network call.
+  - `getInfo(): Promise<{ did, keyId, publicKeyPem }>` — public metadata only.
+  - `sign(payload: Uint8Array): Promise<Uint8Array>` — the signature itself.
+    The implementation performs the operation; it does not hand back a key.
+- **`IssuerKeyStore`** — the verification seam. Public key material only.
+  - `getTrustedVerificationKeys()` — current + previous, if not expired.
+  - `getAllVerificationKeys()` — including revoked/expired, for metadata and audit.
+  - `currentKeyId()` — the current KMS key version/resource ID.
+
+Steps:
+
+1. Implement `IssuerSigner` against your target KMS (GCP Cloud KMS, AWS KMS,
+   HashiCorp Vault, HSM, etc.), mapping `sign()` onto the KMS Sign API for the
+   Ed25519 key version.
+2. Implement `IssuerKeyStore` to serve cached public keys fetched from the KMS.
+3. Return the KMS-backed implementations from `getSharedIssuerSigner()` and
+   `getSharedIssuerKeyStore()`.
 4. Rotation becomes a KMS key version rotation; `PREVIOUS` logic stays the same.
-5. Keep `EnvIssuerKeyStore` as a local fallback for development and disaster recovery testing.
+5. Keep `EnvIssuerSigner` / `EnvIssuerKeyStore` as a local fallback for
+   development and disaster recovery testing.
+
+`tests/unit/issuer-signer.test.ts` guards this contract: it asserts no private
+key material is reachable through the `IssuerSigner` surface. If that test
+fails, a KMS adapter can no longer satisfy the interface.
+
+Note: the *user's* wallet key (`createDemoWalletPresentation`) is deliberately
+outside this boundary. It belongs to the subject, not the issuer, and must
+never be custodied server-side — in production it lives on the user's device
+(see `docs/IDENTITY_DERIVATION.md`).

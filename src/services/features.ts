@@ -3,6 +3,7 @@ import env from '#start/env'
 
 export enum Features {
   AuthDevTokenBootstrap = 'm8:auth:dev_token_bootstrap',
+  OAuthMobileHandoff = 'm8:auth:oauth_mobile_handoff',
   DemoIdentityWalletEnable = 'm8:demo_identity_wallet:enable',
   SimulatedIneEnable = 'm8:simulated_ine:enable',
   LocalParaFallbackEnable = 'm8:local_para_fallback:enable',
@@ -16,6 +17,7 @@ const nonProductionDefault = env.get('NODE_ENV') !== 'production'
 
 const defaultFeatureValues: Record<Features, boolean> = {
   [Features.AuthDevTokenBootstrap]: nonProductionDefault,
+  [Features.OAuthMobileHandoff]: nonProductionDefault,
   [Features.DemoIdentityWalletEnable]: nonProductionDefault,
   [Features.SimulatedIneEnable]: nonProductionDefault,
   [Features.LocalParaFallbackEnable]: nonProductionDefault,

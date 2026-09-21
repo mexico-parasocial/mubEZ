@@ -16,6 +16,7 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}) {
     JWT_SECRET: 'production-jwt-secret-for-issuer-tests',
     APP_KEY: 'production-app-key',
     COOKIE_SECRET: 'production-cookie-secret',
+    CURP_PEPPER: 'production-curp-pepper-for-issuer-tests',
     IDENTITY_ISSUER_DID: issuerDid,
     IDENTITY_ISSUER_PRIVATE_JWK: JSON.stringify(issuerPrivateJwk),
     IDENTITY_ISSUER_PUBLIC_JWK: JSON.stringify(issuerPublicJwk),
@@ -52,7 +53,7 @@ describe('identity wallet issuer keys', () => {
         { id: 'age_over_18', intentToStore: { mode: 'will-not-store' }, required: true },
       ],
     })
-    const presentation = createDemoWalletPresentation({
+    const presentation = await createDemoWalletPresentation({
       request,
       subjectDid: 'did:plc:issuer-subject',
       selectedElementIds: ['age_over_18'],
@@ -85,7 +86,7 @@ describe('identity wallet issuer keys', () => {
         { id: 'age_over_18', intentToStore: { mode: 'will-not-store' }, required: true },
       ],
     })
-    const presentation = createDemoWalletPresentation({
+    const presentation = await createDemoWalletPresentation({
       request,
       subjectDid: 'did:plc:unknown-key-subject',
       selectedElementIds: ['age_over_18'],
@@ -120,7 +121,7 @@ describe('identity wallet issuer keys', () => {
         { id: 'age_over_18', intentToStore: { mode: 'will-not-store' }, required: true },
       ],
     })
-    const presentation = createDemoWalletPresentation({
+    const presentation = await createDemoWalletPresentation({
       request,
       subjectDid: 'did:plc:mismatched-key-subject',
       selectedElementIds: ['age_over_18'],
@@ -210,7 +211,7 @@ describe('identity wallet issuer keys', () => {
         { id: 'age_over_18', intentToStore: { mode: 'will-not-store' }, required: true },
       ],
     })
-    const presentation = createDemoWalletPresentation({
+    const presentation = await createDemoWalletPresentation({
       request,
       subjectDid: 'did:plc:rotation-subject',
       selectedElementIds: ['age_over_18'],
@@ -263,7 +264,7 @@ describe('identity wallet issuer keys', () => {
         { id: 'age_over_18', intentToStore: { mode: 'will-not-store' }, required: true },
       ],
     })
-    const presentation = createDemoWalletPresentation({
+    const presentation = await createDemoWalletPresentation({
       request,
       subjectDid: 'did:plc:attacker-subject',
       selectedElementIds: ['age_over_18'],

@@ -83,7 +83,7 @@ export default class IdentityWalletController {
     }
 
     const session = hydrateSession(sessionId)
-    const presentation = createDemoWalletPresentation({
+    const presentation = await createDemoWalletPresentation({
       request: identityRequest,
       subjectDid: session.did,
       selectedElementIds: body.selectedElementIds as Array<'age_over_18' | 'age_over_21' | 'citizenship' | 'district_hash' | 'curp_hash' | 'verified_public_figure'>,

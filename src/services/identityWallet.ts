@@ -8,7 +8,12 @@ import {
 } from 'node:crypto'
 import env from '#start/env'
 import { Features, isFeatureEnabled } from './features.js'
-import { getSharedIssuerKeyStore, resetSharedIssuerKeyStore } from './issuerKeyStore.js'
+import {
+  getSharedIssuerKeyStore,
+  getSharedIssuerSigner,
+  resetSharedIssuerKeyStore,
+  type IssuerSigner,
+} from './issuerKeyStore.js'
 import type {
   M8IdentityCredential,
   M8IdentityCredentialClaims,
@@ -29,11 +34,14 @@ const DEMO_ISSUER_KEY_ID = 'demo-ine-ed25519'
 let _ineIssuerKey: ReturnType<typeof generateKeyPairSync> | null = null
 let _demoWalletKey: ReturnType<typeof generateKeyPairSync> | null = null
 
+/*
+ * Public issuer metadata. Private key material never leaves the
+ * IssuerSigner boundary (see issuerKeyStore.ts).
+ */
 type SigningIssuer = {
   did: string
   keyId: string
   name: string
-  privateKey: KeyObject
   publicKeyPem: string
 }
 
@@ -44,7 +52,6 @@ function loadConfiguredIssuer() {
     return {
       did: key.did,
       keyId: key.keyId,
-      privateKey: key.privateKey,
       publicKeyPem: key.publicKeyPem,
     }
   } catch (error) {
@@ -86,7 +93,6 @@ function getSigningIssuer(): SigningIssuer {
       did: configuredIssuer.did,
       keyId: configuredIssuer.keyId,
       name: 'Instituto Nacional Electoral',
-      privateKey: configuredIssuer.privateKey,
       publicKeyPem: configuredIssuer.publicKeyPem,
     }
   }
@@ -96,8 +102,27 @@ function getSigningIssuer(): SigningIssuer {
     did: DEMO_ISSUER_DID,
     keyId: DEMO_ISSUER_KEY_ID,
     name: 'Instituto Nacional Electoral',
-    privateKey: demoIssuer.privateKey,
     publicKeyPem: demoIssuer.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  }
+}
+
+/** The signer used for credential issuance: configured key if present, demo key otherwise (dev only). */
+function getIssuerSigner(): IssuerSigner {
+  if (loadConfiguredIssuer()) {
+    return getSharedIssuerSigner()
+  }
+  const demoIssuer = getDemoIneIssuerKey()
+  return {
+    async getInfo() {
+      return {
+        did: DEMO_ISSUER_DID,
+        keyId: DEMO_ISSUER_KEY_ID,
+        publicKeyPem: demoIssuer.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      }
+    },
+    async sign(payload: Uint8Array) {
+      return sign(null, Buffer.from(payload), demoIssuer.privateKey)
+    },
   }
 }
 
@@ -277,13 +302,14 @@ export function createIdentityRequest(
   }
 }
 
-export function createIssuerSignedCredential(params: {
+export async function createIssuerSignedCredential(params: {
   subjectDid: string
   claims: M8IdentityCredentialClaims
   revocationHash: string
   expiresAt?: string
-}): M8IdentityCredential {
-  const issuer = getSigningIssuer()
+}): Promise<M8IdentityCredential> {
+  const signer = getIssuerSigner()
+  const issuer = await signer.getInfo()
   const unsignedCredential: Omit<M8IdentityCredential, 'signature'> = {
     id: `credential-${randomUUID()}`,
     issuerDid: issuer.did,
@@ -296,17 +322,19 @@ export function createIssuerSignedCredential(params: {
     signatureAlg: 'Ed25519',
   }
 
+  const payload = signedCredentialPayload(unsignedCredential)
+  const signature = await signer.sign(Buffer.from(payload))
   return {
     ...unsignedCredential,
-    signature: signPayload(signedCredentialPayload(unsignedCredential), issuer.privateKey),
+    signature: base64url(Buffer.from(signature)),
   }
 }
 
-export function createDemoWalletPresentation(params: {
+export async function createDemoWalletPresentation(params: {
   request: M8IdentityRequest
   subjectDid: string
   selectedElementIds?: M8IdentityElementId[]
-}): M8WalletPresentation {
+}): Promise<M8WalletPresentation> {
   const selected = new Set(
     params.selectedElementIds ?? params.request.requestedElements.map((element) => element.id)
   )
@@ -322,7 +350,7 @@ export function createDemoWalletPresentation(params: {
   ) as M8IdentityCredentialClaims
 
   const walletKey = getDemoWalletKey()
-  const credential = createIssuerSignedCredential({
+  const credential = await createIssuerSignedCredential({
     subjectDid: params.subjectDid,
     claims,
     revocationHash: base64url(randomBytes(32)),

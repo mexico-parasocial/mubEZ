@@ -23,7 +23,7 @@
 | Malicious verifier | Extract witness data (salt, birthYear) from API | Mitigated by client-side proving; server never sees salt |
 | Compromised GrowthBook flag | Force-enable demo/simulated paths in prod | Mitigated by **env-gated** break-glass (`BREAK_GLASS_DEMO_PATHS`) |
 | Leaked issuer key | Forge credentials or sign malicious claims | Mitigated by key rotation grace period + immediate revocation procedure |
-| Insider / DB exfiltration | Link commitments to real identities | Partially mitigated: DB stores commitment + curp_hash + district_hash, but **not** salt or raw CURP |
+| Insider / DB exfiltration | Link commitments to real identities | Mitigated: curp_hash + district_hash are HMAC-SHA256 with a server-side pepper (`CURP_PEPPER`, see `src/services/curpHash.ts`), so exfiltrated hashes cannot be brute-forced against the enumerable CURP space without also stealing the pepper. Legacy truncated-sha256 hashes (`sha256:` prefix) remain brute-forceable and are flagged for re-issuance on next verification. Salt and raw CURP are never stored. Residual risk: pepper lives in env until moved to KMS |
 | Network attacker | Sniff credentials in transit | TLS in production; no plaintext PII in bodies |
 
 ## Trust Boundaries
