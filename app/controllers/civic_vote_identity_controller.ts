@@ -22,7 +22,6 @@ const proofSchema = z
   .object({
     subjectUri: z.string().min(1).max(1024),
     subjectType: subjectTypeSchema,
-    aliasDid: z.string().min(1).max(512).optional(),
   })
   .strict()
 

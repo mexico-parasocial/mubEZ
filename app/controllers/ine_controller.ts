@@ -1,7 +1,8 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { HttpContext } from '@adonisjs/core/http'
 import { getDb } from '../../src/db/connection.js'
+import { computeCurpHash, computeDistrictHash, computePersonKey } from '../../src/services/curpHash.js'
 import { simulateIneExtraction, simulateIneVerification } from '../../src/services/ineSimulation.js'
 import { verifyAgeProof, isValidCommitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID } from '../../src/services/zkpService.js'
 import { hydrateSession } from '../../src/services/sessionService.js'
@@ -139,10 +140,17 @@ export default class IneController {
       age_over_18: true,
       age_over_21: over21Verified,
       citizenship: 'MX',
-      district_hash: `sha256:${createHash('sha256').update(extracted.address.state + extracted.address.postalCode).digest('hex').slice(0, 16)}`,
-      curp_hash: `sha256:${createHash('sha256').update(extracted.curp).digest('hex').slice(0, 16)}`,
+      district_hash: await computeDistrictHash(extracted.address.state, extracted.address.postalCode),
+      curp_hash: await computeCurpHash(extracted.curp),
     }
     const commitment = over18.commitment
+    /*
+     * The anchor one person one vote rests on. Derived from the deterministic
+     * curp_hash, so re-enrolling — new session, new device, new commitment
+     * salt — resolves to the person root already on file instead of minting a
+     * second person who can vote again. Migration 035, mubEZ CD-12.
+     */
+    const personKey = await computePersonKey(claims.curp_hash)
     const revocationHash = randomBytes(32).toString('base64url')
     const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
 
@@ -166,16 +174,16 @@ export default class IneController {
 
         db.prepare(`
           INSERT INTO proof_artifacts
-          (id, session_id, grant_id, request_id, claim_type, outcome, statement, audience_app_id, audience_app_name, surface, status, issued_at, expires_at, revocation_hash, commitment, proof_schema_version, circuit_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, session_id, grant_id, request_id, claim_type, outcome, statement, audience_app_id, audience_app_name, surface, status, issued_at, expires_at, revocation_hash, commitment, proof_schema_version, circuit_id, person_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           proofArtifactId, sessionId, grantId, 'ine-verification', 'has_para_verification', 'verified',
-          // No PII in stored statements: only the truncated curp_hash from
+          // No PII in stored statements: only the peppered curp_hash from
           // the credential claims may be used to match an identity.
           `${$t('ine.statement')} (${claims.curp_hash})`,
           'para.identity', 'PARA Identity', 'civic', 'active', issuedAt,
           expiresAt,
-          revocationHash, commitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID,
+          revocationHash, commitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID, personKey,
         )
       })()
     } catch (error) {
@@ -186,7 +194,7 @@ export default class IneController {
     }
 
     const session = hydrateSession(sessionId)
-    const credential = createIssuerSignedCredential({
+    const credential = await createIssuerSignedCredential({
       subjectDid: session.did,
       claims,
       revocationHash,

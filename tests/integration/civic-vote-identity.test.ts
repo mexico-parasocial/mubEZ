@@ -88,7 +88,54 @@ describe('civic vote identity integration', () => {
     assert.equal(firstProof.subjectType, 'cabildeo')
   })
 
-  it('allows an explicitly linked pseudoidentity to request the same person nullifier', async () => {
+  it('gives the same human the same nullifier from a second session', async () => {
+    /*
+     * The regression this exists for: person roots used to be filed under the
+     * session, and the only guard deduplicated on a commitment whose salt the
+     * client picks. Re-enrolling therefore minted a second person who could
+     * vote again on the same subject. Same INE photo means same CURP, so both
+     * sessions must land on one person root.
+     */
+    const subjectUri = 'at://did:plc:example/com.para.civic.cabildeo/two-devices'
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { subjectUri, subjectType: 'cabildeo' },
+    })
+    assert.equal(first.statusCode, 200)
+
+    const secondSession = await app.inject({
+      method: 'POST',
+      url: '/v1/sessions/start',
+      payload: { identifier: 'civic-voter-second-device.bsky.social' },
+    })
+    const secondToken = JSON.parse(secondSession.payload).tokens.accessToken
+
+    const credential = await issueIneCredentialWithClientProof({
+      app,
+      accessToken: secondToken,
+      inePhotoBase64: 'mock-civic-vote-ine',
+      selfieBase64: 'mock-civic-vote-selfie',
+    })
+    assert.equal(credential.response.statusCode, 200)
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${secondToken}` },
+      payload: { subjectUri, subjectType: 'cabildeo' },
+    })
+    assert.equal(second.statusCode, 200)
+
+    assert.equal(
+      JSON.parse(second.payload).proof.voteNullifier,
+      JSON.parse(first.payload).proof.voteNullifier,
+    )
+  })
+
+  it('issues a proof that carries no DID, linked pseudoidentity or not', async () => {
     const alias = await app.inject({
       method: 'POST',
       url: '/v1/identity/civic-vote-aliases',
@@ -96,6 +143,9 @@ describe('civic vote identity integration', () => {
       payload: { did: 'did:plc:pseudoalias', handle: 'pseudo.example' },
     })
     assert.equal(alias.statusCode, 200)
+    // The caller is told about the alias it linked and nothing else: returning
+    // every alias of the person handed out the correlation between them.
+    assert.equal(JSON.parse(alias.payload).alias.aliasDids, undefined)
 
     const proof = await app.inject({
       method: 'POST',
@@ -104,14 +154,30 @@ describe('civic vote identity integration', () => {
       payload: {
         subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/shared',
         subjectType: 'cabildeo',
-        aliasDid: 'did:plc:pseudoalias',
       },
     })
 
     assert.equal(proof.statusCode, 200)
     const body = JSON.parse(proof.payload).proof
-    assert.equal(body.aliasDid, 'did:plc:pseudoalias')
-    assert.ok(body.aliasDids.includes('did:plc:pseudoalias'))
+    // CD-12: the nullifier is derived from the person root alone, so no DID
+    // enters the request or the response on this path.
+    assert.equal(body.aliasDid, undefined)
+    assert.equal(body.aliasDids, undefined)
     assert.match(body.voteNullifier, /^[a-f0-9]{64}$/)
+  })
+
+  it('refuses a request that tries to name an alias', async () => {
+    const proof = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/strict',
+        subjectType: 'cabildeo',
+        aliasDid: 'did:plc:pseudoalias',
+      },
+    })
+
+    assert.equal(proof.statusCode, 422)
   })
 })

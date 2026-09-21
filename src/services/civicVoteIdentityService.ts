@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection.js'
 import { getCommunityByDid } from './communityService.js'
-import { hasActiveIneCommitment } from './proofOfHumanity.js'
 
 export type CivicVoteSubjectType =
   | 'cabildeo'
@@ -17,11 +16,9 @@ export type CivicVoteSubjectType =
 export interface CivicVoteProof {
   subjectUri: string
   subjectType: CivicVoteSubjectType
-  aliasDid: string
   voteNullifier: string
   eligibilityProofRef: string
   issuedAt: string
-  aliasDids: string[]
 }
 
 type SessionIdentity = {
@@ -51,7 +48,6 @@ export function issueCivicVoteProof(
   input: {
     subjectUri: string
     subjectType: CivicVoteSubjectType
-    aliasDid?: string
   },
 ): CivicVoteProof {
   const subjectUri = input.subjectUri.trim()
@@ -80,32 +76,18 @@ export function issueCivicVoteProof(
     }
   }
 
-  const session = getSessionIdentity(sessionId)
-
-  // 1-person-1-vote is only meaningful when each person root is bound to a
-  // verified human. Require an active INE commitment (proof artifact with a
-  // ZK commitment) before issuing or reusing vote nullifiers — otherwise any
-  // number of throwaway sessions could each mint their own "person".
-  if (!hasActiveIneCommitment(sessionId)) {
-    throw appError(
-      'Identity verification (INE) is required before voting: no active identity commitment for this session',
-      403,
-      'INE_COMMITMENT_REQUIRED',
-    )
-  }
-
-  const person = ensurePersonRoot(sessionId)
+  // 1-person-1-vote is only meaningful when the person root is the human, not
+  // the session. Resolving it goes through the session's own INE artifact and
+  // the `person_key` derived from that credential, so every session of the same
+  // human lands on the same root and cannot mint a second vote.
+  const person = resolvePersonRoot(sessionId)
   if (person.status !== 'active') {
     throw appError('Person identity is not active', 403, 'PERSON_NOT_ACTIVE')
   }
 
-  ensureSessionAlias(person.id, sessionId, session)
-  const aliasDid = input.aliasDid?.trim() || session.did
-  const alias = getActiveAlias(person.id, aliasDid)
-  if (!alias) {
-    throw appError('Alias is not active for this person', 403, 'ALIAS_NOT_ACTIVE')
-  }
-
+  // CD-12: no DID is recorded against the person root here. The nullifier is
+  // derived from `person.id` alone, so an alias gate would authorise nothing
+  // while linking the vote to the account it was cast from.
   const now = new Date().toISOString()
   const voteNullifier = computeVoteNullifier(person.id, subjectType, subjectUri)
   const existing = getExistingNullifier(person.id, subjectType, subjectUri)
@@ -113,22 +95,18 @@ export function issueCivicVoteProof(
 
   if (existing) {
     getDb()
-      .prepare(
-        'UPDATE civic_vote_nullifiers SET session_id = ?, alias_did = ?, last_used_at = ? WHERE id = ?',
-      )
-      .run(sessionId, aliasDid, now, existing.id)
+      .prepare('UPDATE civic_vote_nullifiers SET last_used_at = ? WHERE id = ?')
+      .run(now, existing.id)
   } else {
     getDb()
       .prepare(`
         INSERT INTO civic_vote_nullifiers
-          (id, person_id, session_id, alias_did, subject_uri, subject_type, vote_nullifier, proof_ref, issued_at, last_used_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, person_id, subject_uri, subject_type, vote_nullifier, proof_ref, issued_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         `civic-nullifier-${randomUUID()}`,
         person.id,
-        sessionId,
-        aliasDid,
         subjectUri,
         subjectType,
         voteNullifier,
@@ -138,21 +116,20 @@ export function issueCivicVoteProof(
       )
   }
 
+  // The ledger entry deliberately carries no DID: it is keyed by session, so a
+  // DID beside it would rebuild the link this decision removes.
   writeLedger(sessionId, 'CivicVoteProofIssued', 'civic_vote_nullifier', voteNullifier, {
     subjectUri,
     subjectType,
-    aliasDid,
     proofRef,
   })
 
   return {
     subjectUri,
     subjectType,
-    aliasDid,
     voteNullifier,
     eligibilityProofRef: proofRef,
     issuedAt: existing?.issued_at ?? now,
-    aliasDids: listActiveAliasDids(person.id),
   }
 }
 
@@ -165,62 +142,72 @@ export function linkCivicVoteAlias(
 ) {
   const did = input.did.trim()
   if (!did) throw appError('did is required', 400, 'DID_REQUIRED')
-  const person = ensurePersonRoot(sessionId)
+  const person = resolvePersonRoot(sessionId)
   const now = new Date().toISOString()
   const id = `person-alias-${randomUUID()}`
   getDb()
     .prepare(`
-      INSERT INTO person_aliases (id, person_id, session_id, did, handle, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+      INSERT INTO person_aliases (id, person_id, did, handle, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'active', ?, ?)
       ON CONFLICT(person_id, did) DO UPDATE SET
-        session_id = excluded.session_id,
         handle = excluded.handle,
         status = 'active',
         revoked_at = NULL,
         updated_at = excluded.updated_at
     `)
-    .run(id, person.id, sessionId, did, input.handle?.trim() ?? '', now, now)
+    .run(id, person.id, did, input.handle?.trim() ?? '', now, now)
 
   writeLedger(sessionId, 'CivicVoteAliasLinked', 'person_alias', did, { did })
-  return { did, status: 'active' as const, aliasDids: listActiveAliasDids(person.id) }
+  // CD-12: the caller is told about the alias it just linked and nothing else.
+  // Returning every alias of the person handed out the correlation between
+  // them, which is the linkage this path exists to avoid.
+  return { did, status: 'active' as const }
 }
 
-function ensurePersonRoot(sessionId: string): PersonRoot {
+/**
+ * The person behind a session, filed under the credential rather than the
+ * session.
+ *
+ * The `person_key` is written onto the INE proof artifact when the credential
+ * is issued (`ine_controller`), derived from the peppered `curp_hash`. A second
+ * enrolment by the same human therefore resolves to the row already there,
+ * which is what makes one person one vote hold across sessions and devices.
+ */
+function resolvePersonRoot(sessionId: string): PersonRoot {
   const db = getDb()
+  const artifact = db
+    .prepare(`
+      SELECT person_key FROM proof_artifacts
+      WHERE session_id = ?
+        AND request_id = 'ine-verification'
+        AND outcome = 'verified'
+        AND status = 'active'
+        AND person_key IS NOT NULL
+      ORDER BY issued_at DESC
+      LIMIT 1
+    `)
+    .get(sessionId) as { person_key: string } | undefined
+
+  if (!artifact) {
+    throw appError(
+      'Identity verification (INE) is required before voting: no active identity commitment for this session',
+      403,
+      'INE_COMMITMENT_REQUIRED',
+    )
+  }
+
   const existing = db
-    .prepare('SELECT id, status FROM person_roots WHERE session_id = ?')
-    .get(sessionId) as PersonRoot | undefined
+    .prepare('SELECT id, status FROM person_roots WHERE person_key = ?')
+    .get(artifact.person_key) as PersonRoot | undefined
   if (existing) return existing
 
   const now = new Date().toISOString()
   const id = `person-${randomUUID()}`
   db.prepare(`
-    INSERT INTO person_roots (id, session_id, status, created_at, updated_at)
+    INSERT INTO person_roots (id, person_key, status, created_at, updated_at)
     VALUES (?, ?, 'active', ?, ?)
-  `).run(id, sessionId, now, now)
+  `).run(id, artifact.person_key, now, now)
   return { id, status: 'active' }
-}
-
-function ensureSessionAlias(personId: string, sessionId: string, session: SessionIdentity) {
-  const now = new Date().toISOString()
-  getDb()
-    .prepare(`
-      INSERT INTO person_aliases (id, person_id, session_id, did, handle, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-      ON CONFLICT(person_id, did) DO UPDATE SET
-        session_id = excluded.session_id,
-        handle = excluded.handle,
-        status = 'active',
-        revoked_at = NULL,
-        updated_at = excluded.updated_at
-    `)
-    .run(`person-alias-${randomUUID()}`, personId, sessionId, session.did, session.handle, now, now)
-}
-
-function getActiveAlias(personId: string, did: string) {
-  return getDb()
-    .prepare('SELECT id FROM person_aliases WHERE person_id = ? AND did = ? AND status = ?')
-    .get(personId, did, 'active') as { id: string } | undefined
 }
 
 function getExistingNullifier(personId: string, subjectType: string, subjectUri: string) {
@@ -233,12 +220,6 @@ function getExistingNullifier(personId: string, subjectType: string, subjectUri:
     .get(personId, subjectType, subjectUri) as { id: string; proof_ref: string; issued_at: string } | undefined
 }
 
-function listActiveAliasDids(personId: string): string[] {
-  const rows = getDb()
-    .prepare('SELECT did FROM person_aliases WHERE person_id = ? AND status = ? ORDER BY created_at ASC')
-    .all(personId, 'active') as Array<{ did: string }>
-  return rows.map((row) => row.did)
-}
 
 function getSessionIdentity(sessionId: string): SessionIdentity {
   const row = getDb()
