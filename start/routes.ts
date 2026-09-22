@@ -49,6 +49,13 @@ router
         router.post('/sessions/anonymous/disable', '#controllers/sessions_controller.disableAnonymous')
 
         router.get('/grants', '#controllers/grants_controller.index')
+
+        // Matrix sign-request relay (CD-M6): PARA deposits a bridge challenge,
+        // the iM8 wallet signs it after user approval. Session-bound end to end.
+        router.post('/matrix/sign-requests', '#controllers/matrix_sign_controller.store')
+        router.get('/matrix/sign-requests', '#controllers/matrix_sign_controller.index')
+        router.get('/matrix/sign-requests/:id', '#controllers/matrix_sign_controller.show')
+        router.post('/matrix/sign-requests/:id/fulfill', '#controllers/matrix_sign_controller.fulfill')
         router.post('/grants', '#controllers/grants_controller.store')
         router.post('/grants/:id/approve', '#controllers/grants_controller.approve')
         router.post('/grants/:id/revoke', '#controllers/grants_controller.revoke')
