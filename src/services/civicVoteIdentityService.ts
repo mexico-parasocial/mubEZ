@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import env from '#start/env'
 import { getDb } from '../db/connection.js'
 import { getCommunityByDid } from './communityService.js'
 
@@ -48,6 +49,7 @@ export function issueCivicVoteProof(
   input: {
     subjectUri: string
     subjectType: CivicVoteSubjectType
+    selectedOption?: number
   },
 ): CivicVoteProof {
   const subjectUri = input.subjectUri.trim()
@@ -57,6 +59,13 @@ export function issueCivicVoteProof(
   }
   if (!VALID_SUBJECT_TYPES.has(subjectType)) {
     throw appError('Unsupported civic vote subject type', 400, 'INVALID_SUBJECT_TYPE')
+  }
+
+  if (subjectType === 'cabildeo') {
+    if (!Number.isSafeInteger(input.selectedOption) || input.selectedOption! < 0) {
+      throw appError('selectedOption is required for a cabildeo proof', 400, 'INVALID_OPTION')
+    }
+    proofSecret()
   }
 
   // For community votes, validate membership
@@ -116,52 +125,63 @@ export function issueCivicVoteProof(
       )
   }
 
-  // The ledger entry deliberately carries no DID: it is keyed by session, so a
-  // DID beside it would rebuild the link this decision removes.
-  writeLedger(sessionId, 'CivicVoteProofIssued', 'civic_vote_nullifier', voteNullifier, {
-    subjectUri,
-    subjectType,
-    proofRef,
-  })
+  // Never log the session together with a nullifier, subject or proof reference.
+  const eligibilityProofRef = subjectType === 'cabildeo'
+    ? cabildeoProofMac({
+        actorDid: getSessionIdentity(sessionId).did,
+        subjectUri,
+        selectedOption: input.selectedOption!,
+        voteNullifier,
+      }, proofRef)
+    : proofRef
 
   return {
     subjectUri,
     subjectType,
     voteNullifier,
-    eligibilityProofRef: proofRef,
+    eligibilityProofRef,
     issuedAt: existing?.issued_at ?? now,
   }
 }
 
-export function linkCivicVoteAlias(
-  sessionId: string,
-  input: {
-    did: string
-    handle?: string
-  },
-) {
-  const did = input.did.trim()
-  if (!did) throw appError('did is required', 400, 'DID_REQUIRED')
-  const person = resolvePersonRoot(sessionId)
-  const now = new Date().toISOString()
-  const id = `person-alias-${randomUUID()}`
-  getDb()
-    .prepare(`
-      INSERT INTO person_aliases (id, person_id, did, handle, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'active', ?, ?)
-      ON CONFLICT(person_id, did) DO UPDATE SET
-        handle = excluded.handle,
-        status = 'active',
-        revoked_at = NULL,
-        updated_at = excluded.updated_at
-    `)
-    .run(id, person.id, did, input.handle?.trim() ?? '', now, now)
+export interface CabildeoProofClaim {
+  actorDid: string
+  subjectUri: string
+  selectedOption: number
+  voteNullifier: string
+}
 
-  writeLedger(sessionId, 'CivicVoteAliasLinked', 'person_alias', did, { did })
-  // CD-12: the caller is told about the alias it just linked and nothing else.
-  // Returning every alias of the person handed out the correlation between
-  // them, which is the linkage this path exists to avoid.
-  return { did, status: 'active' as const }
+/** Verifies a public cabildeo authorization; does not expose person/session IDs. */
+export function verifyCabildeoVoteProof(
+  input: CabildeoProofClaim & { eligibilityProofRef: string },
+): boolean {
+  proofSecret()
+  const row = getDb().prepare(`
+    SELECT n.proof_ref FROM civic_vote_nullifiers n
+    JOIN person_roots p ON p.id = n.person_id
+    WHERE n.vote_nullifier = ? AND n.subject_type = 'cabildeo'
+      AND n.subject_uri = ? AND p.status = 'active'
+  `).get(input.voteNullifier, input.subjectUri) as { proof_ref: string } | undefined
+  if (!row) return false
+  const expected = Buffer.from(cabildeoProofMac(input, row.proof_ref))
+  const supplied = Buffer.from(input.eligibilityProofRef)
+  return expected.length === supplied.length && timingSafeEqual(expected, supplied)
+}
+
+function proofSecret(): string {
+  const secret = env.get('CIVIC_VOTE_PROOF_SECRET')
+  if (!secret) throw appError('Civic vote verification is unavailable', 503, 'VOTE_VERIFIER_UNAVAILABLE')
+  return secret
+}
+
+function cabildeoProofMac(input: CabildeoProofClaim, proofRef: string): string {
+  const mac = createHmac('sha256', proofSecret())
+    .update(JSON.stringify([
+      'm8:public-cabildeo-authorization:v1', proofRef, input.voteNullifier,
+      input.subjectUri, input.actorDid, input.selectedOption,
+    ]))
+    .digest('base64url')
+  return `m8:cabildeo:v1:${mac}`
 }
 
 /**
@@ -239,15 +259,6 @@ function computeVoteNullifier(personId: string, subjectType: string, subjectUri:
     .update('\0')
     .update(subjectUri)
     .digest('hex')
-}
-
-function writeLedger(sessionId: string, action: string, targetType: string, targetId: string, detail: unknown) {
-  getDb()
-    .prepare(`
-      INSERT INTO ledger (session_id, action, target_type, target_id, detail_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
-    .run(sessionId, action, targetType, targetId, JSON.stringify(detail ?? {}), new Date().toISOString())
 }
 
 function extractDidFromAtUri(uri: string): string | null {

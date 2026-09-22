@@ -677,3 +677,18 @@ per-request proof of possession on this path.
 **Related.** CD-10 (per-request PoP, the remaining hop), CD-1 (the deterministic
 `curp_hash` this anchors on), CD-9 (registration), OD-7 §5g and §6 (the 28 call
 sites), `IDENTITY_DERIVATION.md` (the rule that stands).
+
+
+**Canje público y cierre de aliases (2026-09-21, código local).** La ruta de
+aliases y su servicio se retiran; la migración 036 elimina la tabla. No se ha
+aplicado a la base real. La emisión deja de registrar sesión junto a
+nullifier/sujeto/referencia en el ledger. Las entradas antiguas y backups
+requieren tratamiento separado; esta entrega no los anonimiza.
+
+El voto público de cabildeo recibe una autorización MAC de m8 ligada al DID de
+su sesión, nullifier, sujeto y opción. El verificador devuelve solo estado HTTP.
+No se persiste una nueva tabla DID-persona, pero el voto público y el broker
+siguen siendo correlacionables: esto **no cumple aún la identidad cívica privada
+de CD-12**, ni pretende habilitarla. Las otras familias conservan su formato de
+emisión y no adquieren verificación de canje por este cambio. El protocolo
+privado y las reglas de publicación permanecen pendientes.

@@ -3484,10 +3484,13 @@
                       "open_question_reply"
                     ]
                   },
-                  "aliasDid": {
-                    "type": "string"
+                  "selectedOption": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Required for cabildeo; authorization is bound to this option and the authenticated session DID."
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -3507,7 +3510,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Alias is not active for this person.",
+            "description": "Active verified person identity is required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3518,58 +3521,9 @@
           },
           "422": {
             "$ref": "#/components/responses/ValidationFailed"
-          }
-        }
-      }
-    },
-    "/v1/identity/civic-vote-aliases": {
-      "post": {
-        "tags": [
-          "Civic Voting"
-        ],
-        "summary": "Link an authorized pseudoidentity DID to the current private person root.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "did"
-                ],
-                "properties": {
-                  "did": {
-                    "type": "string"
-                  },
-                  "handle": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Linked alias.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericObject"
-                }
-              }
-            }
           },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationFailed"
+          "503": {
+            "description": "Cabildeo authorization is not configured."
           }
         }
       }
@@ -5221,6 +5175,66 @@
           },
           "404": {
             "description": "Profile not found."
+          }
+        }
+      }
+    },
+    "/v1/identity/civic-vote-proof/verify": {
+      "post": {
+        "tags": [
+          "Civic Voting"
+        ],
+        "summary": "Verify authorization for a public cabildeo ballot; no person or session data is returned.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "actorDid",
+                  "subjectUri",
+                  "selectedOption",
+                  "voteNullifier",
+                  "eligibilityProofRef"
+                ],
+                "properties": {
+                  "actorDid": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "subjectUri": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "selectedOption": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "voteNullifier": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "eligibilityProofRef": {
+                    "type": "string",
+                    "pattern": "^m8:cabildeo:v1:[A-Za-z0-9_-]{43}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The complete claim is authorized."
+          },
+          "422": {
+            "description": "Malformed, unissued, inactive or altered authorization."
+          },
+          "503": {
+            "description": "Verifier not configured; callers must fail closed."
           }
         }
       }

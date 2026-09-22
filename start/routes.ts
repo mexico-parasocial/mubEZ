@@ -24,6 +24,9 @@ router
     router.get('/identity/ine/nullifier-prover.wasm', '#controllers/zk_proof_controller.nullifierProverWasm')
     router.get('/identity/ine/nullifier-prover.zkey', '#controllers/zk_proof_controller.nullifierProverZkey')
 
+    // Verifies an already-public cabildeo authorization; returns no identity data.
+    router.post('/identity/civic-vote-proof/verify', '#controllers/civic_vote_identity_controller.verifyProof')
+
     router.get('/issuers', '#controllers/issuers_controller.index')
 
     // Identity registration (CD-9): public and session-unbound by design — the
@@ -89,7 +92,6 @@ router
         router.post('/identity/revoke', '#controllers/revocation_controller.revoke')
         router.post('/identity/ine/zkp-nullifier', '#controllers/zk_proof_controller.zkpNullifier')
         router.post('/identity/civic-vote-proof', '#controllers/civic_vote_identity_controller.issueProof')
-        router.post('/identity/civic-vote-aliases', '#controllers/civic_vote_identity_controller.linkAlias')
 
         router.post('/karma/earn', '#controllers/karma_controller.earn')
         router.get('/karma/me', '#controllers/karma_controller.me')

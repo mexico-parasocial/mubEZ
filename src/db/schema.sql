@@ -290,20 +290,7 @@ CREATE TABLE IF NOT EXISTS person_roots (
   FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS person_aliases (
-  id TEXT PRIMARY KEY,
-  person_id TEXT NOT NULL,
-  session_id TEXT NOT NULL,
-  did TEXT NOT NULL,
-  handle TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  revoked_at TEXT,
-  UNIQUE (person_id, did),
-  FOREIGN KEY (person_id) REFERENCES person_roots(id) ON DELETE CASCADE,
-  FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-);
+
 
 CREATE TABLE IF NOT EXISTS civic_vote_nullifiers (
   id TEXT PRIMARY KEY,
@@ -345,8 +332,6 @@ CREATE INDEX IF NOT EXISTS idx_pajareo_responses_entry ON pajareo_responses(entr
 CREATE INDEX IF NOT EXISTS idx_trusted_devices_session ON trusted_devices(session_id);
 CREATE INDEX IF NOT EXISTS idx_device_trust_events_session ON device_trust_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_did_cache_expires ON did_cache(expires_at);
-CREATE INDEX IF NOT EXISTS idx_person_aliases_did ON person_aliases(did);
-CREATE INDEX IF NOT EXISTS idx_person_aliases_session ON person_aliases(session_id);
 CREATE INDEX IF NOT EXISTS idx_civic_vote_nullifiers_subject ON civic_vote_nullifiers(subject_type, subject_uri);
 CREATE INDEX IF NOT EXISTS idx_civic_vote_nullifiers_person ON civic_vote_nullifiers(person_id);
 

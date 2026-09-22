@@ -7,6 +7,7 @@ import type { TestApp } from '../helpers/testApp.js'
 import { issueIneCredentialWithClientProof } from '../helpers/clientProof.js'
 
 const tmpDir = mkdtempSync(join(tmpdir(), 'm8-civic-vote-test-'))
+process.env.CIVIC_VOTE_PROOF_SECRET = 'test-only-civic-authorization-secret-2026'
 process.env.DATABASE_PATH = join(tmpDir, 'civic-vote-test.db')
 
 describe('civic vote identity integration', () => {
@@ -52,7 +53,7 @@ describe('civic vote identity integration', () => {
       headers: { authorization: `Bearer ${unverifiedToken}` },
       payload: {
         subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/abc',
-        subjectType: 'cabildeo',
+        subjectType: 'cabildeo', selectedOption: 1,
       },
     })
 
@@ -61,10 +62,20 @@ describe('civic vote identity integration', () => {
     assert.equal(body.code, 'INE_COMMITMENT_REQUIRED')
   })
 
+  it('requires the chosen option when authorizing a public cabildeo vote', async () => {
+    const response = await app.inject({
+      method: 'POST', url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/missing-option', subjectType: 'cabildeo' },
+    })
+    assert.equal(response.statusCode, 400)
+    assert.equal(JSON.parse(response.payload).code, 'INVALID_OPTION')
+  })
+
   it('issues a stable vote nullifier per person and subject', async () => {
     const payload = {
       subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/abc',
-      subjectType: 'cabildeo',
+      subjectType: 'cabildeo', selectedOption: 1,
     }
     const first = await app.inject({
       method: 'POST',
@@ -102,7 +113,7 @@ describe('civic vote identity integration', () => {
       method: 'POST',
       url: '/v1/identity/civic-vote-proof',
       headers: { authorization: `Bearer ${accessToken}` },
-      payload: { subjectUri, subjectType: 'cabildeo' },
+      payload: { subjectUri, subjectType: 'cabildeo', selectedOption: 1 },
     })
     assert.equal(first.statusCode, 200)
 
@@ -125,7 +136,7 @@ describe('civic vote identity integration', () => {
       method: 'POST',
       url: '/v1/identity/civic-vote-proof',
       headers: { authorization: `Bearer ${secondToken}` },
-      payload: { subjectUri, subjectType: 'cabildeo' },
+      payload: { subjectUri, subjectType: 'cabildeo', selectedOption: 1 },
     })
     assert.equal(second.statusCode, 200)
 
@@ -133,19 +144,20 @@ describe('civic vote identity integration', () => {
       JSON.parse(second.payload).proof.voteNullifier,
       JSON.parse(first.payload).proof.voteNullifier,
     )
+    assert.notEqual(
+      JSON.parse(second.payload).proof.eligibilityProofRef,
+      JSON.parse(first.payload).proof.eligibilityProofRef,
+    )
   })
 
-  it('issues a proof that carries no DID, linked pseudoidentity or not', async () => {
+  it('removes the unused alias endpoint and returns no identity linkage', async () => {
     const alias = await app.inject({
       method: 'POST',
       url: '/v1/identity/civic-vote-aliases',
       headers: { authorization: `Bearer ${accessToken}` },
       payload: { did: 'did:plc:pseudoalias', handle: 'pseudo.example' },
     })
-    assert.equal(alias.statusCode, 200)
-    // The caller is told about the alias it linked and nothing else: returning
-    // every alias of the person handed out the correlation between them.
-    assert.equal(JSON.parse(alias.payload).alias.aliasDids, undefined)
+    assert.equal(alias.statusCode, 404)
 
     const proof = await app.inject({
       method: 'POST',
@@ -153,7 +165,7 @@ describe('civic vote identity integration', () => {
       headers: { authorization: `Bearer ${accessToken}` },
       payload: {
         subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/shared',
-        subjectType: 'cabildeo',
+        subjectType: 'cabildeo', selectedOption: 1,
       },
     })
 
@@ -173,11 +185,47 @@ describe('civic vote identity integration', () => {
       headers: { authorization: `Bearer ${accessToken}` },
       payload: {
         subjectUri: 'at://did:plc:example/com.para.civic.cabildeo/strict',
-        subjectType: 'cabildeo',
+        subjectType: 'cabildeo', selectedOption: 1,
         aliasDid: 'did:plc:pseudoalias',
       },
     })
 
     assert.equal(proof.statusCode, 422)
   })
+  it('verifies a bound authorization and refuses copied or altered claims', async () => {
+    const subjectUri = 'at://did:plc:example/com.para.civic.cabildeo/verify'
+    const issued = await app.inject({
+      method: 'POST', url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { subjectUri, subjectType: 'cabildeo', selectedOption: 1 },
+    })
+    assert.equal(issued.statusCode, 200)
+    const { proof } = JSON.parse(issued.payload)
+    const sessionResponse = await app.inject({
+      method: 'GET', url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
+    const actorDid = JSON.parse(sessionResponse.payload).session.did
+    const claim = { actorDid, subjectUri, selectedOption: 1,
+      voteNullifier: proof.voteNullifier, eligibilityProofRef: proof.eligibilityProofRef }
+    const verify = (payload: unknown) => app.inject({
+      method: 'POST', url: '/v1/identity/civic-vote-proof/verify', payload,
+    })
+    assert.equal((await verify(claim)).statusCode, 204)
+    for (const change of [
+      { actorDid: 'did:plc:attacker' }, { selectedOption: 2 },
+      { subjectUri: subjectUri + '-other' }, { voteNullifier: 'a'.repeat(64) },
+      { eligibilityProofRef: 'm8:cabildeo:v1:' + 'a'.repeat(43) },
+      { eligibilityProofRef: 'invented' },
+    ]) {
+      assert.equal((await verify({ ...claim, ...change })).statusCode, 422)
+    }
+    const { getDb } = await import('../../src/db/connection.js')
+    const db = getDb()
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'person_aliases'").get(), undefined)
+    assert.equal(db.prepare("SELECT count(*) FROM ledger WHERE action = 'CivicVoteProofIssued'").pluck().get(), 0)
+    db.prepare("UPDATE person_roots SET status = 'revoked' WHERE id = (SELECT person_id FROM civic_vote_nullifiers WHERE vote_nullifier = ?)").run(proof.voteNullifier)
+    assert.equal((await verify(claim)).statusCode, 422)
+  })
+
 })

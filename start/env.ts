@@ -40,6 +40,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   })),
   JWT_ACCESS_TTL_SECONDS: zodEnv(z.coerce.number().int().min(60).default(86400)),
   JWT_REFRESH_TTL_DAYS: zodEnv(z.coerce.number().int().min(1).default(7)),
+  CIVIC_VOTE_PROOF_SECRET: zodEnv(z.string().min(32).optional()),
   JWT_ISSUER: zodEnv(z.string().min(1).default('mubez')),
   JWT_AUDIENCE: zodEnv(z.string().min(1).default('m8.api')),
   APP_KEY: zodEnv(z.string().min(16).default(() => {
