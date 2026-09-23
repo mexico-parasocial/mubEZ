@@ -59,6 +59,9 @@
       "name": "Communities"
     },
     {
+      "name": "Matrix"
+    },
+    {
       "name": "System"
     }
   ],
@@ -1199,6 +1202,47 @@
       "GenericObject": {
         "type": "object",
         "additionalProperties": true
+      },
+      "IdentityAssertion": {
+        "type": "object",
+        "required": [
+          "type",
+          "purpose",
+          "audience",
+          "identityPub",
+          "challenge",
+          "signedAt"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "para.identity.pop.v1"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "mubez-registration",
+              "matrix-login",
+              "anon-action"
+            ]
+          },
+          "audience": {
+            "type": "string"
+          },
+          "identityPub": {
+            "type": "string",
+            "description": "64-char identity public key hex."
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "signedAt": {
+            "type": "string",
+            "description": "RFC 3339 UTC."
+          }
+        }
       }
     },
     "responses": {
@@ -5235,6 +5279,684 @@
           },
           "503": {
             "description": "Verifier not configured; callers must fail closed."
+          }
+        }
+      }
+    },
+    "/v1/sessions/exchange": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Exchange a one-time OAuth handoff code for tokens (mobile sign-in).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens for the completed OAuth session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "authenticated",
+                    "sessionId",
+                    "session",
+                    "tokens"
+                  ],
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "session": {
+                      "$ref": "#/components/schemas/GenericObject"
+                    },
+                    "tokens": {
+                      "$ref": "#/components/schemas/TokenBundle"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Code invalid or expired (OAUTH_EXCHANGE_INVALID).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Code already used (OAUTH_EXCHANGE_REUSED).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    },
+    "/v1/identity/register/challenge": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Issue a single-use, session-unbound registration challenge (CD-9).",
+        "responses": {
+          "200": {
+            "description": "Challenge to sign with the identity key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "challenge"
+                  ],
+                  "properties": {
+                    "challenge": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/register": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Register an identity public key from its proof of possession (CD-9). Public by design: the proof is the authorization.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "signed"
+                ],
+                "properties": {
+                  "signed": {
+                    "type": "object",
+                    "required": [
+                      "assertion",
+                      "signature"
+                    ],
+                    "properties": {
+                      "assertion": {
+                        "$ref": "#/components/schemas/IdentityAssertion"
+                      },
+                      "signature": {
+                        "type": "string",
+                        "description": "128-char sr25519 signature hex."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Key was already registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Key registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad challenge or bad proof — \"Registration rejected\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    },
+    "/v1/identity/action-challenge": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Issue a single-use anon-action challenge bound to an identity key and action (CD-10).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "identityPub",
+                  "action"
+                ],
+                "properties": {
+                  "identityPub": {
+                    "type": "string",
+                    "description": "64-char identity public key hex."
+                  },
+                  "action": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Challenge nonce and its expiry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "challenge",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "challenge": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    },
+    "/v1/matrix/sign-requests": {
+      "post": {
+        "tags": [
+          "Matrix"
+        ],
+        "summary": "Deposit a bridge sign request on the session (PARA side, CD-M6).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "challenge",
+                  "audience"
+                ],
+                "properties": {
+                  "challenge": {
+                    "type": "string",
+                    "description": "64-char bridge challenge hex."
+                  },
+                  "audience": {
+                    "type": "string",
+                    "enum": [
+                      "para-matrix-bridge/identity.v1",
+                      "para-matrix-bridge/session.v1",
+                      "para-matrix-bridge/attest.v1",
+                      "para-matrix-bridge/join.v1"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pending sign request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "challenge",
+                    "audience",
+                    "status",
+                    "createdAt",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "challenge": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "fulfilled"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "assertion": {
+                      "type": "object",
+                      "description": "Present once fulfilled: the stored signed assertion."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Matrix"
+        ],
+        "summary": "List pending sign requests for the session (wallet approval surface).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending requests, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "requests"
+                  ],
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "challenge",
+                          "audience",
+                          "status",
+                          "createdAt",
+                          "expiresAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "challenge": {
+                            "type": "string"
+                          },
+                          "audience": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "fulfilled"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "assertion": {
+                            "type": "object",
+                            "description": "Present once fulfilled: the stored signed assertion."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/matrix/sign-requests/{id}": {
+      "get": {
+        "tags": [
+          "Matrix"
+        ],
+        "summary": "Poll one sign request (PARA's side): pending until the wallet fulfills it.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request, with the assertion once fulfilled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "challenge",
+                    "audience",
+                    "status",
+                    "createdAt",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "challenge": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "fulfilled"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "assertion": {
+                      "type": "object",
+                      "description": "Present once fulfilled: the stored signed assertion."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Sign request not found or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/matrix/sign-requests/{id}/fulfill": {
+      "post": {
+        "tags": [
+          "Matrix"
+        ],
+        "summary": "Post the wallet-signed assertion. Stored only if it verifies against exactly this request.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "assertion",
+                  "signature"
+                ],
+                "properties": {
+                  "assertion": {
+                    "$ref": "#/components/schemas/IdentityAssertion"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "128-char sr25519 signature hex."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fulfilled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "fulfilled"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "not-found, not-pending, or invalid-proof.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    },
+    "/v1/anonymous/identities/resolve": {
+      "post": {
+        "tags": [
+          "Anonymous"
+        ],
+        "summary": "Resolve the caller's anonymous identity by proof of possession of its key (F2b / CD-10).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "proof"
+                ],
+                "properties": {
+                  "proof": {
+                    "type": "object",
+                    "required": [
+                      "signed",
+                      "jti"
+                    ],
+                    "properties": {
+                      "signed": {
+                        "type": "object",
+                        "required": [
+                          "assertion",
+                          "signature"
+                        ],
+                        "properties": {
+                          "assertion": {
+                            "$ref": "#/components/schemas/IdentityAssertion"
+                          },
+                          "signature": {
+                            "type": "string",
+                            "description": "128-char sr25519 signature hex."
+                          }
+                        }
+                      },
+                      "jti": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The identity anchored to the proven key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "identity"
+                  ],
+                  "properties": {
+                    "identity": {
+                      "$ref": "#/components/schemas/GenericObject"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid identity proof.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No identity for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
           }
         }
       }
