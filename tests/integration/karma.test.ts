@@ -8,6 +8,9 @@ import { issueIneCredentialWithClientProof } from '../helpers/clientProof.js'
 
 const tmpDir = mkdtempSync(join(tmpdir(), 'm8-karma-test-'))
 process.env.DATABASE_PATH = join(tmpDir, 'karma-test.db')
+// Minting a cabildeo authorization requires the independent proof secret;
+// without it the vote-proof endpoint is disabled (503 VOTE_VERIFIER_UNAVAILABLE).
+process.env.CIVIC_VOTE_PROOF_SECRET = 'test-civic-vote-proof-secret-0123456789abcdef'
 
 describe('server-derived karma', () => {
   let app: TestApp
@@ -105,7 +108,7 @@ describe('server-derived karma', () => {
       method: 'POST',
       url: '/v1/identity/civic-vote-proof',
       headers: { authorization: `Bearer ${accessToken}` },
-      payload: { subjectUri, subjectType: 'cabildeo' },
+      payload: { subjectUri, subjectType: 'cabildeo', selectedOption: 1 },
     })
     assert.equal(proof.statusCode, 200)
 
