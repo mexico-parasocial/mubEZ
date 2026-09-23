@@ -66,3 +66,16 @@ export function t(ctx: HttpContext) {
   const locale = resolveLocale(ctx.request.header('accept-language') ?? undefined)
   return createT(locale)
 }
+
+/**
+ * The client IP for security decisions (rate-limit buckets, abuse records).
+ *
+ * Proxy trust is configured at the framework layer (config/http.ts): by
+ * default nothing is trusted, so this is the socket address and forged
+ * x-forwarded-for headers cannot rotate a rate-limit bucket. With
+ * TRUST_PROXY_HEADERS, the loopback reverse proxy's chain is honored and
+ * request.ip() is the rightmost untrusted hop.
+ */
+export function getClientIp(ctx: HttpContext): string {
+  return ctx.request.ip()
+}

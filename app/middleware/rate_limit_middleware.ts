@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
 import env from '#start/env'
+import { getClientIp } from '#support/http'
 import { recordAbuse } from '../../src/services/abuseMonitor.js'
 
 /**
@@ -32,14 +33,6 @@ function cleanupExpiredEntries() {
 
 // Run cleanup every 60 seconds
 setInterval(cleanupExpiredEntries, 60_000).unref()
-
-function getClientIp(ctx: HttpContext): string {
-  return (
-    ctx.request.header('x-forwarded-for')?.split(',')[0]?.trim() ??
-    ctx.request.header('x-real-ip') ??
-    ctx.request.ip()
-  )
-}
 
 type RateLimitCategory = 'auth' | 'community_read' | 'community_mutation' | 'community_vote' | 'general'
 

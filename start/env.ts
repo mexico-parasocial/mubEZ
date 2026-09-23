@@ -24,6 +24,14 @@ const booleanEnv = z.preprocess((value) => {
   return value
 }, z.boolean())
 
+// Like booleanEnv, but defaults to false everywhere — for flags that must not
+// silently turn on in development.
+const optInBooleanEnv = z.preprocess((value) => {
+  if (value === undefined) return false
+  if (typeof value === 'string') return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase())
+  return value
+}, z.boolean())
+
 export default await Env.create(new URL('../', import.meta.url), {
   NODE_ENV: zodEnv(z.enum(['development', 'test', 'production']).default('development')),
   PORT: zodEnv(z.coerce.number().int().min(1).max(65535).default(8787)),
@@ -85,6 +93,10 @@ export default await Env.create(new URL('../', import.meta.url), {
   LOG_LEVEL: zodEnv(z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info')),
   CORS_ORIGIN: zodEnv(z.string().default('*')),
   RATE_LIMIT_ENABLED: zodEnv(booleanEnv),
+  // Opt-in trust for the loopback reverse proxy's x-forwarded-for chain
+  // (config/app.ts trustProxy). When false, request.ip() is the socket
+  // address and proxy headers cannot forge a client IP.
+  TRUST_PROXY_HEADERS: zodEnv(optInBooleanEnv),
   RATE_LIMIT_WINDOW_MS: zodEnv(z.coerce.number().int().min(1000).default(60000)),
   RATE_LIMIT_MAX: zodEnv(z.coerce.number().int().min(1).default(100)),
   RATE_LIMIT_AUTH_MAX: zodEnv(z.coerce.number().int().min(1).default(20)),
