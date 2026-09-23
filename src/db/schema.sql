@@ -1,4 +1,22 @@
 -- Muvis Schema v1
+--
+-- This file is the BASELINE, not the current schema. Boot runs ensureSchema()
+-- (this file) and then runMigrations() (src/db/migrations/*.sql), so on a
+-- fresh database every migration applies on top of this baseline.
+--
+-- The rules that keep that convergence working:
+--   1. Everything here must be IF NOT EXISTS-safe to re-run.
+--   2. A table may only be added here in its migration shape, and only when
+--      its migration is purely additive (CREATE ... IF NOT EXISTS / CREATE
+--      INDEX IF NOT EXISTS). Tables that migrations REBUILD (e.g. 034–036
+--      rebasing person_roots / person_aliases / civic_vote_nullifiers for
+--      CD-12) must keep their pre-rebuild shape here, because those
+--      migrations are not re-runnable on top of the post-rebuild shape.
+--   3. Columns added by an unguarded `ALTER TABLE ... ADD COLUMN` in a
+--      migration (e.g. 033 → oauth_login_attempts.return_to, 035 →
+--      proof_artifacts.person_key) must NOT appear here, or the migration
+--      fails with a duplicate column on fresh installs.
+-- In doubt, mirror the migration exactly and change nothing it alters.
 
 CREATE TABLE IF NOT EXISTS migrations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -414,3 +432,40 @@ CREATE INDEX IF NOT EXISTS idx_community_actions_community ON community_actions(
 CREATE INDEX IF NOT EXISTS idx_community_actions_status ON community_actions(status);
 CREATE INDEX IF NOT EXISTS idx_community_actions_pending ON community_actions(status) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_community_action_votes_action ON community_action_votes(action_id);
+
+-- CD-10: the shared replay-consume primitive for the broker (migration 032).
+CREATE TABLE IF NOT EXISTS assurance_challenge (
+  nonce_hash    TEXT PRIMARY KEY,        -- sha256(nonce) hex; the raw nonce is returned once, never stored
+  subject       TEXT NOT NULL,           -- identity/subject the pending-count cap is scoped to
+  binding_hash  TEXT NOT NULL,           -- sha256 of the canonical bindings this nonce is issued for
+  issuer        TEXT NOT NULL,
+  issued_at     INTEGER NOT NULL,        -- unix seconds
+  expires_at    INTEGER NOT NULL,        -- unix seconds
+  consumed_at   INTEGER                  -- null until spent
+);
+CREATE INDEX IF NOT EXISTS idx_assurance_challenge_subject ON assurance_challenge(subject, expires_at);
+CREATE INDEX IF NOT EXISTS idx_assurance_challenge_expiry ON assurance_challenge(expires_at);
+
+-- Independent of the challenge: one jti cannot spend a second nonce.
+CREATE TABLE IF NOT EXISTS assurance_receipt (
+  issuer        TEXT NOT NULL,
+  jti_hash      TEXT NOT NULL,           -- sha256(jti) hex
+  consumed_at   INTEGER NOT NULL,
+  retain_until  INTEGER NOT NULL,
+  PRIMARY KEY (issuer, jti_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_assurance_receipt_expiry ON assurance_receipt(retain_until);
+
+-- OAuth mobile handoff (Phase C) one-time exchange codes (migration 033).
+-- oauth_login_attempts.return_to is deliberately NOT in the baseline above:
+-- migration 033 adds it with an unguarded ALTER.
+CREATE TABLE IF NOT EXISTS oauth_exchange_codes (
+  id TEXT PRIMARY KEY,
+  code_hash TEXT NOT NULL UNIQUE,
+  attempt_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_exchange_codes_hash ON oauth_exchange_codes(code_hash);
