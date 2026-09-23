@@ -17,7 +17,7 @@ The iM8 Expo frontend is intentionally not included here. It lives in the separa
 
 ## Requirements
 
-- Node.js 22 or newer.
+- Node.js 24.18 or newer.
 - pnpm 11.11.0 through Corepack.
 
 ## Setup
