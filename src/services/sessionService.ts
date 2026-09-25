@@ -53,6 +53,32 @@ export async function createSession(input: ProofBrokerSessionStartInput): Promis
   const pdsEndpoint = await resolvePdsEndpoint(did)
   const authServer = pdsEndpoint ?? env.get('PDS_URL')
 
+  /*
+   * One active session per DID (ux_sessions_active_did). Signing in again
+   * resumes it, as the OAuth callback does, instead of failing the insert:
+   * the session carries the person's INE enrollment, so a new one would also
+   * lose it.
+   */
+  const active = db
+    .prepare("SELECT session_id FROM sessions WHERE did = ? AND status = 'active'")
+    .get(did) as { session_id: string } | undefined
+  if (active) {
+    const resumedAt = nowIso()
+    return {
+      attempt: {
+        sessionId: active.session_id,
+        did,
+        handle,
+        authorizationServer: authServer,
+        authUrl: `${authServer}/oauth/authorize?client_id=m8.broker&request_uri=${encodeURIComponent(`${env.get('SERVICE_URL')}/v1/sessions/oauth/callback`)}`,
+        phaseLabel: 'Resumed',
+        startedAt: resumedAt,
+        resolvedAt: resumedAt,
+      },
+      session: hydrateSession(active.session_id),
+    }
+  }
+
   const sessionId = randomUUID()
   const now = nowIso()
 
