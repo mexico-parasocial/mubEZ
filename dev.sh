@@ -9,8 +9,8 @@ export NVM_DIR="$HOME/.nvm"
 # Always run from the directory this script lives in
 cd "$(dirname "$0")" || exit 1
 
-# Use the Node major this repo's engines field requires
-nvm use 24
+# Use the version pinned in .nvmrc
+nvm use
 
 # Start development server
 echo "Starting development server with Node $(node --version)..."
