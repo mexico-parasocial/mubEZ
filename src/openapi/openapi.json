@@ -5960,6 +5960,263 @@
           }
         }
       }
+    },
+    "/v1/identity/civic-delegation-proof": {
+      "post": {
+        "tags": [
+          "Civic Voting"
+        ],
+        "summary": "Issue an m8 grant for a cabildeo delegation, bound to the delegator's DID, the delegate and the scope.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "mode",
+                      "delegateTo",
+                      "cabildeo"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "active"
+                        ]
+                      },
+                      "delegateTo": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "cabildeo": {
+                        "type": "string",
+                        "maxLength": 1024
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "mode",
+                      "delegateTo",
+                      "party",
+                      "community",
+                      "scopeFlairs"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "passive"
+                        ]
+                      },
+                      "delegateTo": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "party": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "community": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "scopeFlairs": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delegation grant: `{ proof: { eligibilityProofRef } }`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Active verified person identity is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    },
+    "/v1/identity/civic-delegation-proof/verify": {
+      "post": {
+        "tags": [
+          "Civic Voting"
+        ],
+        "summary": "Verify a public cabildeo delegation grant. With `subjectUri` and the resolver secret, returns the delegator's vote nullifier for that cabildeo (AppView tallying only).",
+        "security": [],
+        "parameters": [
+          {
+            "name": "x-m8-resolver-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required when `subjectUri` is present. Shared only between the AppView and m8."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "actorDid",
+                  "eligibilityProofRef",
+                  "mode",
+                  "delegateTo"
+                ],
+                "properties": {
+                  "actorDid": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "eligibilityProofRef": {
+                    "type": "string",
+                    "pattern": "^m8:delegation:v1:[0-9a-f-]{36}:[A-Za-z0-9_-]{43}$"
+                  },
+                  "subjectUri": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "passive"
+                    ]
+                  },
+                  "delegateTo": {
+                    "type": "string"
+                  },
+                  "cabildeo": {
+                    "type": "string"
+                  },
+                  "party": {
+                    "type": "string"
+                  },
+                  "community": {
+                    "type": "string"
+                  },
+                  "scopeFlairs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved: `{ voteNullifier }`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "The grant is valid for this delegator, delegate and scope."
+          },
+          "403": {
+            "description": "Resolution requested without the resolver secret."
+          },
+          "422": {
+            "description": "Malformed, unissued, inactive or altered grant."
+          }
+        }
+      }
+    },
+    "/v1/identity/ine/dev-enroll": {
+      "post": {
+        "tags": [
+          "INE"
+        ],
+        "summary": "Development only: enroll the session with a simulated INE derived from its DID, so local accounts can vote. 404 in production.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`{ enrolled: true, proofArtifactId, created }`; `created` is false when the session was already enrolled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Development enrollment is disabled."
+          },
+          "409": {
+            "description": "The public commitment is already registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "x-m8-types": {

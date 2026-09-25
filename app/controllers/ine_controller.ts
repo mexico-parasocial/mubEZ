@@ -1,13 +1,12 @@
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import type { HttpContext } from '@adonisjs/core/http'
+import env from '#start/env'
 import { getDb } from '../../src/db/connection.js'
-import { computeCurpHash, computeDistrictHash, computePersonKey } from '../../src/services/curpHash.js'
 import { simulateIneExtraction, simulateIneVerification } from '../../src/services/ineSimulation.js'
-import { verifyAgeProof, isValidCommitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID } from '../../src/services/zkpService.js'
+import { generateAgeProof, verifyAgeProof, isValidCommitment } from '../../src/services/zkpService.js'
+import { recordIneCredential } from '../../src/services/ineCredentialService.js'
 import { hydrateSession } from '../../src/services/sessionService.js'
-import { createAnonymousProfile } from '../../src/services/anonymousProfileService.js'
-import { createIssuerSignedCredential } from '../../src/services/identityWallet.js'
 import { isValidIssuanceChallenge, rotateIssuanceChallenge } from '../../src/services/issuanceChallenge.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
 import { getSessionId, validateBody, t } from '#support/http'
@@ -100,7 +99,6 @@ export default class IneController {
     }
     rotateIssuanceChallenge(sessionId)
 
-    const db = getDb()
     const $t = t(ctx)
     const extracted = body.extracted as import('../../src/types/index.js').IneExtractedData
     const verification = body.verification as import('../../src/types/index.js').IneVerificationResult
@@ -127,106 +125,78 @@ export default class IneController {
       over21Verified = true
     }
 
-    const existingCommitment = db.prepare(`
+    const result = await recordIneCredential({
+      sessionId,
+      extracted,
+      verification,
+      commitment: over18.commitment,
+      over21Verified,
+      $t,
+    })
+    if (!result.ok) {
+      return ctx.response.status(result.status).send({ error: result.error, code: result.code })
+    }
+    return ctx.response.send(result.body)
+  }
+
+  /**
+   * Development only: enrolls the current session with a simulated INE, so a
+   * local account can vote without the photo and proof flow of the wallet.
+   * The simulated identity is derived from the session's DID, so each local
+   * account is its own person, and re-enrolling the same account resolves to
+   * the same person (and the same vote nullifiers). Age proofs are generated
+   * here, which production never does. Refused unless simulated INE is
+   * allowed and NODE_ENV is not production.
+   */
+  async devEnroll(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    if (
+      env.get('NODE_ENV') === 'production' ||
+      !assertDemoPathAllowed(Features.SimulatedIneEnable)
+    ) {
+      return ctx.response.status(404).send({
+        error: 'Development INE enrollment is disabled',
+        code: 'FEATURE_DISABLED',
+      })
+    }
+
+    const enrolled = getDb().prepare(`
       SELECT id FROM proof_artifacts
-      WHERE commitment = ? AND status NOT IN ('revoked', 'expired')
+      WHERE session_id = ? AND request_id = 'ine-verification'
+        AND outcome = 'verified' AND status = 'active'
       LIMIT 1
-    `).get(over18.commitment) as { id: string } | undefined
-    if (existingCommitment) {
-      return ctx.response.status(409).send({ error: 'Commitment already registered', code: 'COMMITMENT_ALREADY_REGISTERED' })
+    `).get(sessionId) as { id: string } | undefined
+    if (enrolled) {
+      return ctx.response.send({ enrolled: true, proofArtifactId: enrolled.id, created: false })
     }
 
-    const claims = {
-      age_over_18: true,
-      age_over_21: over21Verified,
-      citizenship: 'MX',
-      district_hash: await computeDistrictHash(extracted.address.state, extracted.address.postalCode),
-      curp_hash: await computeCurpHash(extracted.curp),
-    }
-    const commitment = over18.commitment
-    /*
-     * The anchor one person one vote rests on. Derived from the deterministic
-     * curp_hash, so re-enrolling — new session, new device, new commitment
-     * salt — resolves to the person root already on file instead of minting a
-     * second person who can vote again. Migration 035, mubEZ CD-12.
-     */
-    const personKey = await computePersonKey(claims.curp_hash)
-    const revocationHash = randomBytes(32).toString('base64url')
-    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-
-    const grantId = `grant-ine-${randomUUID()}`
-    const proofArtifactId = `proof-ine-${randomUUID()}`
-    const issuedAt = new Date().toISOString()
-
-    try {
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO grants
-          (id, session_id, app_id, app_name, app_kind, surface, requested_claims_json, proof_mode, status, reason, requested_at, issued_at, expires_at, review_note)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          grantId, sessionId, 'para.identity', 'PARA Identity', 'Verifier', 'civic',
-          JSON.stringify([{ type: 'has_para_verification', disclosure: 'proof-only' }]),
-          'proof-only', 'approved', $t('ine.grantReason'), issuedAt,
-          issuedAt, expiresAt,
-          $t('ine.reviewNote'),
-        )
-
-        db.prepare(`
-          INSERT INTO proof_artifacts
-          (id, session_id, grant_id, request_id, claim_type, outcome, statement, audience_app_id, audience_app_name, surface, status, issued_at, expires_at, revocation_hash, commitment, proof_schema_version, circuit_id, person_key)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          proofArtifactId, sessionId, grantId, 'ine-verification', 'has_para_verification', 'verified',
-          // No PII in stored statements: only the peppered curp_hash from
-          // the credential claims may be used to match an identity.
-          `${$t('ine.statement')} (${claims.curp_hash})`,
-          'para.identity', 'PARA Identity', 'civic', 'active', issuedAt,
-          expiresAt,
-          revocationHash, commitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID, personKey,
-        )
-      })()
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
-        return ctx.response.status(409).send({ error: 'Commitment already registered', code: 'COMMITMENT_ALREADY_REGISTERED' })
-      }
-      throw error
-    }
-
-    const session = hydrateSession(sessionId)
-    const credential = await createIssuerSignedCredential({
-      subjectDid: session.did,
-      claims,
-      revocationHash,
-      expiresAt,
+    const { did } = hydrateSession(sessionId)
+    const seed = Buffer.from(`para-dev-enroll:${did}`).toString('base64')
+    const { extracted } = simulateIneExtraction(seed)
+    const verification = simulateIneVerification(extracted, seed)
+    const currentYear = new Date().getFullYear()
+    const over18 = await generateAgeProof({
+      birthYear: new Date(extracted.birthDate).getFullYear(),
+      salt: BigInt('0x' + randomBytes(31).toString('hex')),
+      currentYear,
+      ageThreshold: 18,
     })
 
-    db.prepare(`
-      INSERT INTO ledger (session_id, action, target_type, target_id, detail_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      sessionId, $t('ledger.action.verified'), 'identity', proofArtifactId,
-      JSON.stringify({
-        reason: $t('ledger.reason.ineCompleted'),
-        verificationId: verification.verificationId,
-        curpHash: claims.curp_hash,
-        commitment,
-        revocationHash,
-        credentialId: credential.id,
-        issuerDid: credential.issuerDid,
-        issuerKeyId: credential.issuerKeyId,
-      }),
-      new Date().toISOString(),
-    )
-
-    const anonymousProfile = createAnonymousProfile(sessionId, $t('anonymous.prefix'))
-
+    const result = await recordIneCredential({
+      sessionId,
+      extracted,
+      verification,
+      commitment: over18.commitment,
+      over21Verified: false,
+      $t: t(ctx),
+    })
+    if (!result.ok) {
+      return ctx.response.status(result.status).send({ error: result.error, code: result.code })
+    }
     return ctx.response.send({
-      credential,
-      proofArtifactId,
-      verificationId: verification.verificationId,
-      commitment,
-      anonymousProfile,
+      enrolled: true,
+      proofArtifactId: result.body.proofArtifactId,
+      created: true,
     })
   }
 }

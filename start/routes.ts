@@ -96,6 +96,8 @@ router
         router.post('/identity/ine/analyze', '#controllers/ine_controller.ineAnalyze')
         router.post('/identity/ine/verify', '#controllers/ine_controller.ineVerify')
         router.post('/identity/ine/credential', '#controllers/ine_controller.ineCredential')
+        // Development only (404 in production): simulated INE enrollment for local voting.
+        router.post('/identity/ine/dev-enroll', '#controllers/ine_controller.devEnroll')
         router.post('/identity/ine/zkp-verify', '#controllers/zk_proof_controller.zkpVerify')
         router.post('/identity/revoke', '#controllers/revocation_controller.revoke')
         router.post('/identity/ine/zkp-nullifier', '#controllers/zk_proof_controller.zkpNullifier')
