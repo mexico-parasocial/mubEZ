@@ -26,6 +26,7 @@ router
 
     // Verifies an already-public cabildeo authorization; returns no identity data.
     router.post('/identity/civic-vote-proof/verify', '#controllers/civic_vote_identity_controller.verifyProof')
+    router.post('/identity/civic-delegation-proof/verify', '#controllers/civic_vote_identity_controller.verifyDelegationProof')
 
     router.get('/issuers', '#controllers/issuers_controller.index')
 
@@ -99,6 +100,7 @@ router
         router.post('/identity/revoke', '#controllers/revocation_controller.revoke')
         router.post('/identity/ine/zkp-nullifier', '#controllers/zk_proof_controller.zkpNullifier')
         router.post('/identity/civic-vote-proof', '#controllers/civic_vote_identity_controller.issueProof')
+        router.post('/identity/civic-delegation-proof', '#controllers/civic_vote_identity_controller.issueDelegationProof')
 
         router.post('/karma/earn', '#controllers/karma_controller.earn')
         router.get('/karma/me', '#controllers/karma_controller.me')

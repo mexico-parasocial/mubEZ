@@ -327,6 +327,12 @@ CREATE TABLE IF NOT EXISTS civic_vote_nullifiers (
   FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS civic_delegation_grants (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES person_roots(id) ON DELETE CASCADE,
+  issued_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_claim_requests_session ON claim_requests(session_id);
 CREATE INDEX IF NOT EXISTS idx_claim_requests_status ON claim_requests(status);

@@ -8,6 +8,7 @@ import { issueIneCredentialWithClientProof } from '../helpers/clientProof.js'
 
 const tmpDir = mkdtempSync(join(tmpdir(), 'm8-civic-vote-test-'))
 process.env.CIVIC_VOTE_PROOF_SECRET = 'test-only-civic-authorization-secret-2026'
+process.env.CIVIC_DELEGATION_RESOLVER_SECRET = 'test-only-civic-delegation-resolver-secret-2026'
 process.env.DATABASE_PATH = join(tmpDir, 'civic-vote-test.db')
 
 describe('civic vote identity integration', () => {
@@ -148,6 +149,56 @@ describe('civic vote identity integration', () => {
       JSON.parse(second.payload).proof.eligibilityProofRef,
       JSON.parse(first.payload).proof.eligibilityProofRef,
     )
+  })
+
+  it('binds a delegation to its author, delegate, scope and direct-vote person', async () => {
+    const subjectUri = 'at://did:plc:example/com.para.civic.cabildeo/delegated'
+    const session = await app.inject({ method: 'GET', url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` } })
+    const actorDid = JSON.parse(session.payload).session.did
+    const claim = { mode: 'active', delegateTo: 'did:plc:chosen-delegate', cabildeo: subjectUri }
+    const issued = await app.inject({ method: 'POST', url: '/v1/identity/civic-delegation-proof',
+      headers: { authorization: `Bearer ${accessToken}` }, payload: claim })
+    assert.equal(issued.statusCode, 200)
+    const eligibilityProofRef = JSON.parse(issued.payload).proof.eligibilityProofRef
+    const verify = (payload: unknown, resolver = false) => app.inject({ method: 'POST',
+      url: '/v1/identity/civic-delegation-proof/verify',
+      headers: resolver ? { 'x-m8-resolver-secret': process.env.CIVIC_DELEGATION_RESOLVER_SECRET! } : {},
+      payload })
+    const publicClaim = { ...claim, actorDid, eligibilityProofRef }
+    assert.equal((await verify(publicClaim)).statusCode, 204)
+    for (const changed of [
+      { actorDid: 'did:plc:other' }, { delegateTo: 'did:plc:other' },
+      { cabildeo: subjectUri + '-other' }, { eligibilityProofRef: 'invented' },
+    ]) assert.equal((await verify({ ...publicClaim, ...changed })).statusCode, 422)
+    assert.equal((await verify({ ...publicClaim, subjectUri })).statusCode, 403)
+    const resolved = await verify({ ...publicClaim, subjectUri }, true)
+    assert.equal(resolved.statusCode, 200)
+    const direct = await app.inject({ method: 'POST', url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { subjectUri, subjectType: 'cabildeo', selectedOption: 0 } })
+    assert.equal(JSON.parse(resolved.payload).voteNullifier,
+      JSON.parse(direct.payload).proof.voteNullifier)
+  })
+
+  it('binds a passive delegation to its named delegate and all three filters', async () => {
+    const session = await app.inject({ method: 'GET', url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` } })
+    const actorDid = JSON.parse(session.payload).session.did
+    const claim = { mode: 'passive', delegateTo: 'did:plc:delegate',
+      party: 'Example', community: 'community-one', scopeFlairs: ['education'] }
+    const issued = await app.inject({ method: 'POST', url: '/v1/identity/civic-delegation-proof',
+      headers: { authorization: `Bearer ${accessToken}` }, payload: claim })
+    assert.equal(issued.statusCode, 200)
+    const eligibilityProofRef = JSON.parse(issued.payload).proof.eligibilityProofRef
+    const verify = (payload: unknown) => app.inject({ method: 'POST',
+      url: '/v1/identity/civic-delegation-proof/verify', payload })
+    const publicClaim = { ...claim, actorDid, eligibilityProofRef }
+    assert.equal((await verify(publicClaim)).statusCode, 204)
+    for (const changed of [
+      {delegateTo: 'did:plc:other'}, {party: 'Other'},
+      {community: 'other-community'}, {scopeFlairs: ['housing']},
+    ]) assert.equal((await verify({...publicClaim, ...changed})).statusCode, 422)
   })
 
   it('removes the unused alias endpoint and returns no identity linkage', async () => {
