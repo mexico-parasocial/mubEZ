@@ -3677,7 +3677,7 @@
         "tags": [
           "ZKP"
         ],
-        "summary": "Verify and record a community nullifier proof.",
+        "summary": "Verify and record a community nullifier proof (v2, CD-16). The Groth16 proof shows membership in the issuer's enrollment tree without revealing the enrollment; publicSignals are [root, nullifier, communityId, currentYear, ageThreshold]. The root must be current or superseded within the grace window, currentYear the current UTC year, and ageThreshold between 18 and 120. Only the nullifier and community are stored.",
         "security": [
           {
             "bearerAuth": []
@@ -3705,7 +3705,7 @@
             }
           },
           "400": {
-            "description": "Invalid proof, duplicate nullifier, or mismatch.",
+            "description": "Invalid proof, reused nullifier, community mismatch, wrong year, out-of-range threshold, or an unknown or stale root.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6576,6 +6576,55 @@
           },
           "404": {
             "description": "Not found, expired, or not in the state the call needs."
+          }
+        }
+      }
+    },
+    "/v1/identity/enrollment-tree": {
+      "get": {
+        "tags": [
+          "ZKP"
+        ],
+        "summary": "The issuer's enrollment tree (CD-16), public so that downloading it identifies nobody. Clients find their own leaf (their enrollment commitment) and path locally.",
+        "responses": {
+          "200": {
+            "description": "Tree depth, root, populated levels (levels[0] are the leaves; '0' is an empty or revoked leaf) and zero-subtree hashes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "depth",
+                    "root",
+                    "levels",
+                    "zeros"
+                  ],
+                  "properties": {
+                    "depth": {
+                      "type": "integer"
+                    },
+                    "root": {
+                      "type": "string"
+                    },
+                    "levels": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "zeros": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

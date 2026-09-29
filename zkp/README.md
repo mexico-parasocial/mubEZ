@@ -120,3 +120,26 @@ Tests cover:
 2. **CURP circuit v2**: Add a circuit that proves knowledge of a CURP whose hash is in a Merkle tree of verified citizens
 3. **Nullifiers**: Add `nullifier = Poseidon(secret, context)` to prevent double-registration
 4. **CRL integration**: Prove non-inclusion in a Merkle tree of revoked credentials
+
+## `nullifier_proof_v2` (CD-16)
+
+| Property | Value |
+|---|---|
+| File | `circuits/nullifier_proof_v2.circom` (+ `circuits/lib/merkle.circom`) |
+| Constraints | 3,914 at depth 14 (compiled with `--O2`) |
+| Public inputs | `communityId`, `currentYear`, `ageThreshold` |
+| Public outputs | `root`, `nullifier` |
+| Private inputs | `birthYear`, `salt`, Merkle `pathElements[14]`, `pathIndices[14]` |
+
+The circuit proves membership of `Poseidon(birthYear, salt)` in the issuer's
+enrollment tree (`src/services/enrollmentTree.ts`, served publicly at
+`GET /v1/identity/enrollment-tree`), and outputs
+`nullifier = Poseidon(salt, communityId)`. It replaces v1, which published the
+commitment itself and so linked every community an enrollment joined.
+
+## Development keys only
+
+`scripts/setup.sh` runs a single-party Groth16 phase 2, and whoever runs it
+could forge proofs. Every `*_final.zkey` in `out/` is for development. The
+production procedure is in `docs/ZK_CEREMONY_PLAN.md`, to run after the audit
+(`docs/ZK_AUDIT_RFP.md`) has frozen the circuits.

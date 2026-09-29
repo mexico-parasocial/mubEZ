@@ -80,7 +80,7 @@ mubEZ is issuer, relay and verifier, and is fully trusted for privacy in v2.
 | `proof_artifacts` | per session: `revocation_hash`, ZK `commitment`, `person_key`, and a statement containing `curp_hash` |
 | `ledger` | `curpHash`, `commitment`, `revocationHash`, both credential ids, issuer key id |
 | `wallet_binding_requests` | session ↔ holder public key, and issued credentials until collected; rows pruned lazily after expiry |
-| `nullifiers` | `(nullifier, community_id, commitment, session_id)` |
+| `nullifiers` | `(nullifier, community_id)` only, since CD-16 (v1 also stored commitment and session) |
 
 From these an operator can reconstruct: account → INE person → every
 audience app the account presented to, when, and for what purpose. Not in the

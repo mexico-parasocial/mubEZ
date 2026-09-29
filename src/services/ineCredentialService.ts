@@ -7,6 +7,7 @@ import { computeCurpHash, computeDistrictHash, computePersonKey } from './curpHa
 import { createIssuerSignedCredential, minimizedCredentialClaims } from './identityWallet.js'
 import { hydrateSession } from './sessionService.js'
 import { CIRCUIT_ID, PROOF_SCHEMA_VERSION } from './zkpService.js'
+import { addEnrollmentLeaf } from './enrollmentTree.js'
 
 /**
  * Records a verified INE enrollment for a session, once its age proofs have
@@ -89,6 +90,9 @@ export async function recordIneCredential(opts: {
         expiresAt,
         revocationHash, commitment, PROOF_SCHEMA_VERSION, CIRCUIT_ID, personKey,
       )
+      // The enrollment joins the issuer's tree; nullifier proofs show
+      // membership in it without revealing the commitment (CD-16).
+      addEnrollmentLeaf(commitment)
     })()
   } catch (error) {
     if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {

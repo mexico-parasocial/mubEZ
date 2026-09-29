@@ -18,6 +18,8 @@ router
     router.post('/sessions/refresh', '#controllers/sessions_controller.refresh')
 
     router.get('/identity/crl', '#controllers/revocation_controller.crl')
+    // Public so that downloading it identifies nobody (CD-16).
+    router.get('/identity/enrollment-tree', '#controllers/zk_proof_controller.enrollmentTree')
     router.get('/identity/ine/zkp-prover.html', '#controllers/zk_proof_controller.zkpProverHtml')
     router.get('/identity/ine/zkp-prover.wasm', '#controllers/zk_proof_controller.zkpProverWasm')
     router.get('/identity/ine/zkp-prover.zkey', '#controllers/zk_proof_controller.zkpProverZkey')

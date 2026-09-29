@@ -13,9 +13,9 @@ export type ZkpArtifactId =
   | 'ine_age_proof_wasm'
   | 'ine_age_proof_zkey'
   | 'ine_age_proof_vkey'
-  | 'nullifier_proof_wasm'
-  | 'nullifier_proof_zkey'
-  | 'nullifier_proof_vkey'
+  | 'nullifier_proof_v2_wasm'
+  | 'nullifier_proof_v2_zkey'
+  | 'nullifier_proof_v2_vkey'
 
 export type ZkpArtifactManifestEntry = {
   circuitId: string
