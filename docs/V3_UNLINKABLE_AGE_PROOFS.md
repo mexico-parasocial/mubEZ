@@ -128,8 +128,12 @@ issuer learns *when* a holder refreshes, not what it proves.
 5. **Verifiers** accept v3 for threshold statements and keep v2 only for
    identifier requests. Existing v2 credentials keep working until expiry;
    enrollments get a leaf on their next re-issuance.
-6. **Retire** the `commitment` output of `nullifier_proof` (or its public use)
-   and the commitment column in `nullifiers`, replacing it with scoped `nym`s.
+6. **Done in CD-16:** `nullifier_proof_v2` no longer publishes the
+   commitment, `nullifiers` no longer stores it, and the issuer tree and
+   `MerkleTreeInclusion` it introduced are the ones v3 reuses. v3 moves
+   nullifiers to scoped `nym`s over v3 leaves.
+
+The full circuit specification is `V3_CIRCUIT_SPEC.md`.
 
 ## Risks
 
