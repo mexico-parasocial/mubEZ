@@ -1,0 +1,79 @@
+{
+  "description": "CD-14 wallet conformance vectors. Regenerate with scripts/generate-wallet-vectors.ts; never edit by hand. Seeds are public test values: never use them for a real key.",
+  "issuer": {
+    "did": "did:m8:ine:vector-issuer",
+    "keyId": "ine-ed25519-vector",
+    "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAiojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w=\n-----END PUBLIC KEY-----"
+  },
+  "holder": {
+    "seed": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZ9O16vDAv2taYC01na7MhqenQFNJDsN64I5xNgWHyHA=\n-----END PUBLIC KEY-----"
+  },
+  "binding": {
+    "issuanceChallenge": "c2hhcmVkLWlzc3VhbmNlLWNoYWxsZW5nZQ",
+    "message": "m8.identity.holder-binding.v1:c2hhcmVkLWlzc3VhbmNlLWNoYWxsZW5nZQ",
+    "proof": "wW38280MGAYj4iSDKjypEJ9_dusjBXf9iuvJ06-_3lf79g9AObQhC4nz303hRg-WRTzTxJo7rmP73itKzztxBg"
+  },
+  "credential": {
+    "canonicalPayload": "{\"claims\":{\"age_over_18\":true,\"citizenship\":\"MX\"},\"expiresAt\":\"2027-09-01T12:00:00.000Z\",\"holderPublicKey\":\"-----BEGIN PUBLIC KEY-----\\nMCowBQYDK2VwAyEAZ9O16vDAv2taYC01na7MhqenQFNJDsN64I5xNgWHyHA=\\n-----END PUBLIC KEY-----\",\"id\":\"credential-00000000-0000-4000-8000-000000000001\",\"issuedAt\":\"2026-09-01T12:00:00.000Z\",\"issuerDid\":\"did:m8:ine:vector-issuer\",\"issuerKeyId\":\"ine-ed25519-vector\",\"revocationHash\":\"dmVjdG9yLXJldm9jYXRpb24taGFzaA\",\"signatureAlg\":\"Ed25519\",\"subjectDid\":\"did:plc:vectorsubjectaaaaaaaaaaa\"}",
+    "value": {
+      "id": "credential-00000000-0000-4000-8000-000000000001",
+      "issuerDid": "did:m8:ine:vector-issuer",
+      "issuerKeyId": "ine-ed25519-vector",
+      "subjectDid": "did:plc:vectorsubjectaaaaaaaaaaa",
+      "issuedAt": "2026-09-01T12:00:00.000Z",
+      "expiresAt": "2027-09-01T12:00:00.000Z",
+      "claims": {
+        "age_over_18": true,
+        "citizenship": "MX"
+      },
+      "revocationHash": "dmVjdG9yLXJldm9jYXRpb24taGFzaA",
+      "holderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZ9O16vDAv2taYC01na7MhqenQFNJDsN64I5xNgWHyHA=\n-----END PUBLIC KEY-----",
+      "signatureAlg": "Ed25519",
+      "signature": "WHffKO-lukNY6W8FucELnDnS-2OHMN2TK-ycYzPX8dIujduPuJiTLM6Cl_y-9LjAKojiAn9GX4Nd5K4epJqPCA"
+    }
+  },
+  "request": {
+    "id": "identity-request-00000000-0000-4000-8000-000000000002",
+    "nonce": "bm9uY2UtZm9yLXRoZS12ZWN0b3ItcmVxdWVzdA",
+    "audienceAppId": "vector.verifier"
+  },
+  "presentation": {
+    "disclosedClaimIds": [
+      "age_over_18"
+    ],
+    "canonicalPayload": "{\"audienceAppId\":\"vector.verifier\",\"credential\":{\"claims\":{\"age_over_18\":true,\"citizenship\":\"MX\"},\"expiresAt\":\"2027-09-01T12:00:00.000Z\",\"holderPublicKey\":\"-----BEGIN PUBLIC KEY-----\\nMCowBQYDK2VwAyEAZ9O16vDAv2taYC01na7MhqenQFNJDsN64I5xNgWHyHA=\\n-----END PUBLIC KEY-----\",\"id\":\"credential-00000000-0000-4000-8000-000000000001\",\"issuedAt\":\"2026-09-01T12:00:00.000Z\",\"issuerDid\":\"did:m8:ine:vector-issuer\",\"issuerKeyId\":\"ine-ed25519-vector\",\"revocationHash\":\"dmVjdG9yLXJldm9jYXRpb24taGFzaA\",\"signature\":\"WHffKO-lukNY6W8FucELnDnS-2OHMN2TK-ycYzPX8dIujduPuJiTLM6Cl_y-9LjAKojiAn9GX4Nd5K4epJqPCA\",\"signatureAlg\":\"Ed25519\",\"subjectDid\":\"did:plc:vectorsubjectaaaaaaaaaaa\"},\"disclosedClaims\":{\"age_over_18\":true},\"disclosure\":\"full-credential\",\"expiresAt\":\"2026-09-02T09:01:30.000Z\",\"issuedAt\":\"2026-09-02T09:00:00.000Z\",\"nonce\":\"bm9uY2UtZm9yLXRoZS12ZWN0b3ItcmVxdWVzdA\",\"requestId\":\"identity-request-00000000-0000-4000-8000-000000000002\",\"signatureAlg\":\"Ed25519\",\"type\":\"m8.identity.presentation.v2\"}",
+    "value": {
+      "type": "m8.identity.presentation.v2",
+      "disclosure": "full-credential",
+      "requestId": "identity-request-00000000-0000-4000-8000-000000000002",
+      "nonce": "bm9uY2UtZm9yLXRoZS12ZWN0b3ItcmVxdWVzdA",
+      "audienceAppId": "vector.verifier",
+      "credential": {
+        "id": "credential-00000000-0000-4000-8000-000000000001",
+        "issuerDid": "did:m8:ine:vector-issuer",
+        "issuerKeyId": "ine-ed25519-vector",
+        "subjectDid": "did:plc:vectorsubjectaaaaaaaaaaa",
+        "issuedAt": "2026-09-01T12:00:00.000Z",
+        "expiresAt": "2027-09-01T12:00:00.000Z",
+        "claims": {
+          "age_over_18": true,
+          "citizenship": "MX"
+        },
+        "revocationHash": "dmVjdG9yLXJldm9jYXRpb24taGFzaA",
+        "holderPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZ9O16vDAv2taYC01na7MhqenQFNJDsN64I5xNgWHyHA=\n-----END PUBLIC KEY-----",
+        "signatureAlg": "Ed25519",
+        "signature": "WHffKO-lukNY6W8FucELnDnS-2OHMN2TK-ycYzPX8dIujduPuJiTLM6Cl_y-9LjAKojiAn9GX4Nd5K4epJqPCA"
+      },
+      "disclosedClaims": {
+        "age_over_18": true
+      },
+      "issuedAt": "2026-09-02T09:00:00.000Z",
+      "expiresAt": "2026-09-02T09:01:30.000Z",
+      "signatureAlg": "Ed25519",
+      "signature": "PgHeTZ9mHCRPwq_uDOd0zzST_Mabyb72JEfQN7Y0NDa7fee79k2g9ieUeI5xz32T0329QitSjczxKeR3gd_YAw"
+    }
+  },
+  "verifyAt": "2026-09-02T09:00:30.000Z"
+}

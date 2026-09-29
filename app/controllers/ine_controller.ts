@@ -7,6 +7,7 @@ import { simulateIneExtraction, simulateIneVerification } from '../../src/servic
 import { generateAgeProof, verifyAgeProof, isValidCommitment } from '../../src/services/zkpService.js'
 import { recordIneCredential } from '../../src/services/ineCredentialService.js'
 import { verifyHolderKeyProof } from '../../src/services/identityWallet.js'
+import { boundHolderKeyForIssuance, depositIssuedCredentials } from '../../src/services/walletRelayService.js'
 import { hydrateSession } from '../../src/services/sessionService.js'
 import { isValidIssuanceChallenge, rotateIssuanceChallenge } from '../../src/services/issuanceChallenge.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
@@ -31,6 +32,9 @@ const ineCredentialSchema = z.object({
   // only so its absence gets a specific error code.
   holderPublicKey: z.string().min(1).max(1024).optional(),
   holderKeyProof: z.string().min(1).max(256).optional(),
+  // Alternatively, a binding the iM8 wallet made through the relay (CD-14).
+  // The credentials then go to the wallet's mailbox, not to the caller.
+  walletBindingRequestId: z.string().min(1).max(128).optional(),
 }).strict()
 
 type AgeProofPayload = z.infer<typeof ageProofSchema>
@@ -95,12 +99,29 @@ export default class IneController {
     if (!body) return
 
     // Checked before the challenge is consumed, so a client that cannot
-    // bind a holder key does not burn it.
-    const { holderPublicKey, holderKeyProof } = body
-    if (holderPublicKey === undefined || holderKeyProof === undefined) {
+    // bind a holder key does not burn it. Exactly one binding mode: a direct
+    // proof, or a wallet binding made through the relay.
+    const direct = body.holderPublicKey !== undefined || body.holderKeyProof !== undefined
+    const viaWallet = body.walletBindingRequestId !== undefined
+    if (direct && viaWallet) {
       return ctx.response.status(400).send({
-        error: 'holderPublicKey and holderKeyProof are required',
+        error: 'Use either holderPublicKey/holderKeyProof or walletBindingRequestId, not both',
+        code: 'HOLDER_BINDING_AMBIGUOUS',
+      })
+    }
+    if (!viaWallet && (body.holderPublicKey === undefined || body.holderKeyProof === undefined)) {
+      return ctx.response.status(400).send({
+        error: 'holderPublicKey and holderKeyProof, or walletBindingRequestId, are required',
         code: 'HOLDER_KEY_PROOF_REQUIRED',
+      })
+    }
+    const walletHolderKey = viaWallet
+      ? boundHolderKeyForIssuance(sessionId, body.walletBindingRequestId!, body.issuanceChallenge)
+      : null
+    if (viaWallet && !walletHolderKey) {
+      return ctx.response.status(400).send({
+        error: 'Wallet binding is not bound to this issuance challenge',
+        code: 'WALLET_BINDING_NOT_READY',
       })
     }
 
@@ -116,7 +137,7 @@ export default class IneController {
     }
     rotateIssuanceChallenge(sessionId)
 
-    if (!verifyHolderKeyProof(holderPublicKey, body.issuanceChallenge, holderKeyProof)) {
+    if (!viaWallet && !verifyHolderKeyProof(body.holderPublicKey!, body.issuanceChallenge, body.holderKeyProof!)) {
       return ctx.response.status(400).send({
         error: 'Invalid holder key or proof of possession',
         code: 'HOLDER_KEY_PROOF_INVALID',
@@ -155,11 +176,20 @@ export default class IneController {
       verification,
       commitment: over18.commitment,
       over21Verified,
-      holderPublicKey,
+      holderPublicKey: walletHolderKey ?? body.holderPublicKey!,
       $t,
     })
     if (!result.ok) {
       return ctx.response.status(result.status).send({ error: result.error, code: result.code })
+    }
+    if (viaWallet) {
+      const { credential, basicCredential, ...rest } = result.body
+      depositIssuedCredentials(sessionId, body.walletBindingRequestId!, {
+        proofArtifactId: rest.proofArtifactId,
+        credential: credential!,
+        basicCredential: basicCredential!,
+      })
+      return ctx.response.send({ ...rest, credentialDelivery: 'wallet', walletBindingRequestId: body.walletBindingRequestId })
     }
     return ctx.response.send(result.body)
   }

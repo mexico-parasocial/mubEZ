@@ -51,7 +51,8 @@ export type M8IdentityRequest = {
   purpose: string
   merchantIdentifier: string
   requestedElements: M8IdentityRequestedElement[]
-  status: 'active' | 'used' | 'expired'
+  /** 'declined': the holder's wallet refused to present for it. */
+  status: 'active' | 'used' | 'expired' | 'declined'
   createdAt: string
   expiresAt: string
   usedAt: string | null

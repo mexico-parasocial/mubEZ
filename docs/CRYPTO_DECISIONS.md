@@ -779,3 +779,60 @@ would need per-claim salted digests signed by the issuer (SD-JWT style) or a
 BBS+ / ZK scheme, a new `type`, and verifiers accepting v2 and v3 in parallel
 until v2 credentials expire. Until then the privacy guarantee is the
 linkable-claim refusal and the minimized credential above, nothing more.
+
+---
+
+## CD-14 — Holder keys live in the iM8 wallet, one per enrollment, with no backup; PARA reaches them only through a relay
+
+**Decision.** The v2 holder key (CD-13) is an Ed25519 key the iM8 wallet
+generates on the device for each INE enrollment, stores device-only
+(`WHEN_UNLOCKED_THIS_DEVICE_ONLY`) behind user presence
+(`requireAuthentication`), and never exports. PARA never holds a holder key or
+a credential. It reaches the wallet through a session-bound relay on the
+pattern of the Matrix sign-request relay:
+
+- **Binding.** PARA opens `/identity/wallet/binding-requests`, which snapshots
+  the issuance challenge. The wallet fulfils it with a public key and a
+  possession proof, verified before storing. PARA then issues with
+  `walletBindingRequestId`, and the credentials wait in the relay row until the
+  wallet collects them once. PARA's response omits them.
+- **Presentation.** The identity request is the mailbox. PARA creates it; the
+  wallet lists it (`GET /identity/requests`), shows the user what the
+  presentation reveals, signs, and submits to `/identity/verify`. PARA reads a
+  minimal result back once (`GET /identity/request/:id`); the wallet can
+  decline.
+- **Recovery.** `/identity/revoke` accepts `proofArtifactId`, so a replacement
+  device can revoke enrollments whose credentials it never held, then enrol
+  again with a new key.
+
+**Why no backup.** A holder key derived from the BIP-39 seed would be the same
+across enrollments, linking them, and would let anyone holding the recovery
+phrase present the credentials. Losing the device costs a re-enrollment, which
+is cheap; person roots are keyed by `person_key` (CD-12), so votes and
+nullifiers carry over and there is still one person, one vote.
+
+**Rejected alternatives.**
+
+- *PARA generates and holds the key.* Puts key material in the social app,
+  the opposite of the wallet boundary CD-M6 set.
+- *Hardware (Secure Enclave / StrongBox) key.* Not available for Ed25519. A
+  P-256 holder key would allow it, but needs an ES256 holder-key format in
+  mubEZ; noted as hardening, not done.
+- *Credentials returned to PARA and forwarded to the wallet.* The CURP hash
+  would transit and rest in PARA.
+
+**Gates.** iM8 `HOLDER_WALLET_ENABLED` and PARA `WALLET_HOLDER_KEY_SUPPORTED`
+stay `false`, and `createDeviceHolderWallet` refuses while they are, until the
+device tests and a real issuer integration listed in `WALLET_PRIVACY.md` pass.
+
+**Conformance.** `docs/wallet-presentation-vectors.json`
+(`scripts/generate-wallet-vectors.ts`) pins the binding proof, credential
+canonicalization and presentation signature; Ed25519 is deterministic, and
+iM8's tests reproduce every byte. The vectors also pin that mubEZ's
+`localeCompare` key order and plain code-point order agree on every field name
+the format uses.
+
+**Privacy.** Unchanged from CD-13 and mapped in `WALLET_PRIVACY.md`: v2
+presentations are linkable. The unlinkable design is a proposal
+(`V3_UNLINKABLE_AGE_PROOFS.md`), not a decision.
+

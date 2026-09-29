@@ -529,6 +529,8 @@ export type PresentationVerificationOptions = {
   revocationStatus: (revocationHash: string) => CredentialRevocationStatus
   /** Reject credentials the registry does not know. Default true. */
   rejectUnknownRevocationStatus?: boolean
+  /** Verification instant in ms since epoch; defaults to now (test vectors pin it). */
+  now?: number
 }
 
 function invalidResult(
@@ -559,8 +561,8 @@ export function verifyWalletPresentation(
 ): M8IdentityVerificationResult {
   const errors: string[] = []
   const warnings: string[] = []
-  const checkedAt = nowIso()
-  const now = Date.now()
+  const now = options.now ?? Date.now()
+  const checkedAt = new Date(now).toISOString()
 
   if ((input as { type?: unknown } | null)?.type === LEGACY_PRESENTATION_TYPE) {
     return invalidResult(request, [
@@ -693,4 +695,11 @@ export function verifyWalletPresentation(
     errors,
     warnings,
   }
+}
+
+/** Canonicalization, exported for the wallet conformance vectors only. */
+export const __internal = {
+  stableJson,
+  signedCredentialPayload,
+  signedPresentationPayload,
 }

@@ -8,14 +8,19 @@ export default class RevocationController {
   async revoke(ctx: HttpContext) {
     const sessionId = getSessionId(ctx)
 
-    const body = ctx.request.body() as { revocationHash: string; reason?: string; targetStatus?: 'revoked' | 'suspended' }
+    // By revocationHash, or by proofArtifactId: a replacement device sees the
+    // session's artifacts but never held the lost device's credentials, so it
+    // cannot know their revocation hash (CD-14 recovery).
+    const body = ctx.request.body() as { revocationHash?: string; proofArtifactId?: string; reason?: string; targetStatus?: 'revoked' | 'suspended' }
     const targetStatus = body.targetStatus ?? 'revoked'
     const db = getDb()
     const $t = t(ctx)
 
-    const artifact = db.prepare(
-      'SELECT id, session_id, status, claim_type FROM proof_artifacts WHERE revocation_hash = ?'
-    ).get(body.revocationHash) as { id: string; session_id: string; status: string; claim_type: string } | undefined
+    const artifact = (typeof body.revocationHash === 'string'
+      ? db.prepare('SELECT id, session_id, status, claim_type, revocation_hash FROM proof_artifacts WHERE revocation_hash = ?').get(body.revocationHash)
+      : typeof body.proofArtifactId === 'string'
+        ? db.prepare('SELECT id, session_id, status, claim_type, revocation_hash FROM proof_artifacts WHERE id = ?').get(body.proofArtifactId)
+        : undefined) as { id: string; session_id: string; status: string; claim_type: string; revocation_hash: string | null } | undefined
 
     if (!artifact) {
       return ctx.response.status(404).send({ error: $t('errors.revoke.notFound') })
@@ -38,7 +43,7 @@ export default class RevocationController {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       sessionId, $t('ledger.action.revoked'), 'identity', artifact.id,
-      JSON.stringify({ reason: body.reason ?? $t('ledger.reason.userRevoked'), revocationHash: body.revocationHash, targetStatus }),
+      JSON.stringify({ reason: body.reason ?? $t('ledger.reason.userRevoked'), revocationHash: artifact.revocation_hash, targetStatus }),
       now,
     )
 
