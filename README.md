@@ -2,7 +2,7 @@
 
 mubEZ is the backend for the iM8 app. It provides the proof broker, credential wallet, scoped grant, trust policy, civic identity, community governance, and verification APIs used by the frontend.
 
-The service is built with AdonisJS, TypeScript, SQLite, AT Protocol integrations, and zero-knowledge proof helpers for privacy-preserving identity flows.
+The service is built with AdonisJS, TypeScript, SQLite, AT Protocol integrations, and zero-knowledge age proofs at INE enrollment. Credential presentations to verifiers are not zero-knowledge and not anonymous: they carry the account DID and the whole credential (see `docs/WALLET_PRIVACY.md`).
 
 ## What is in this repo
 

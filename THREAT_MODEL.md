@@ -25,6 +25,9 @@
 | Leaked issuer key | Forge credentials or sign malicious claims | Mitigated by key rotation grace period + immediate revocation procedure |
 | Insider / DB exfiltration | Link commitments to real identities | Mitigated: curp_hash + district_hash are HMAC-SHA256 with a server-side pepper (`CURP_PEPPER`, see `src/services/curpHash.ts`), so exfiltrated hashes cannot be brute-forced against the enumerable CURP space without also stealing the pepper. Legacy truncated-sha256 hashes (`sha256:` prefix) remain brute-forceable and are flagged for re-issuance on next verification. Salt and raw CURP are never stored. Residual risk: pepper lives in env until moved to KMS |
 | Network attacker | Sniff credentials in transit | TLS in production; no plaintext PII in bodies |
+| Credential thief | Present a copied v2 credential | Mitigated: presentations must be signed by the issuer-bound holder key (CD-13) |
+| Holder-key thief (stolen unlocked phone, malware after unlock) | Present as the victim | Partly mitigated: key is device-only and each read needs user presence; recovery revokes by artifact id from another device (CD-14). Not mitigated: the lost device's session tokens are not revoked by recovery; the key is a Keychain/Keystore item, not a non-exportable hardware key |
+| Colluding verifiers | Link a holder's presentations | **Not mitigated in v2**: subject DID, holder key, credential id and revocation hash are stable (see `docs/WALLET_PRIVACY.md`) |
 
 ## Trust Boundaries
 
@@ -80,3 +83,7 @@
 3. **PARA replay/downgrade protection**: Add challenge/nonce binding between PARA session and M8 credential issuance.
 4. **DB encryption at rest**: SQLite file is plaintext. Consider SQLCipher or filesystem encryption.
 5. **Distributed rate limiting**: Current in-memory `Map` will not work across PM2 clusters or horizontal replicas. Migrate to Redis-backed limiter before multi-instance deployment.
+6. **No selective disclosure (current-state gap)**: `/identity/verify` presentations are full-credential (CD-13); every claim in the presented credential reaches the verifier. Mitigations: credentials with unrequested `curp_hash` / `district_hash` are refused, and each enrollment also issues a minimized `basicCredential` without them. Presentations remain linkable (subject DID, holder key, revocation hash). A cryptographic disclosure format is not built.
+7. **Identity resolution**: Handle login is bidirectionally verified against a freshly resolved DID document and fails closed on directory outage. PDS routing still uses a stale-while-revalidate cache (≤ 1 h, never expired); key checks use ≤ 5 min.
+8. **Age proof not issuer-bound (current-state gap)**: `ine_age_proof`'s `birthYear` is a free client witness and `/identity/ine/credential` does not compare it with the INE birth date, so the `age_over_18` claim rests on the client's word. A real issuer must check the birth date itself (see `docs/V3_UNLINKABLE_AGE_PROOFS.md`).
+9. **Nullifier proofs publish the commitment**: community memberships are linkable to each other and to the session through `nullifiers.commitment` / `session_id`.

@@ -224,7 +224,7 @@ export function buildSession(
       activeSurface: 'civic' as const, surfaceStates: { public: 'Limited' as const, civic: 'Live' as const, dating: 'Muted' as const },
     },
     {
-      id: 'spark', name: 'Spark', handle: `${row.handle}.private`, role: 'Selective dating profile', summary: 'Persona for selective disclosure contexts.',
+      id: 'spark', name: 'Spark', handle: `${row.handle}.private`, role: 'Selective dating profile', summary: 'Persona for dating contexts.',
       activeSurface: 'dating' as const, surfaceStates: { public: 'Muted' as const, civic: 'Muted' as const, dating: 'Live' as const },
     },
   ]
