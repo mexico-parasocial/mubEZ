@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto'
 import env from '#start/env'
 import { getDb } from '../db/connection.js'
-import { resolveHandleToDid, resolvePdsEndpoint } from './didResolver.js'
+import {
+  IdentityResolutionError,
+  claimedHandle,
+  pdsEndpointFromDocument,
+  resolveDidFresh,
+  resolveHandleToDid,
+  resolveVerifiedHandle,
+} from './didResolver.js'
 import { ensureIssuanceChallenge } from './issuanceChallenge.js'
 import { PROOF_BROKER_CLAIM_TYPES } from '../types/index.js'
 import { scopeForSurface } from './scopePolicy.js'
@@ -21,37 +28,100 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+/**
+ * Resolves the identity a session is created for, fresh and fail-closed
+ * (atproto handle spec; OAuth spec cache guidance). A handle must be claimed
+ * back by its DID's current document. A DID must resolve; its handle is
+ * recorded only when it verifies bidirectionally, otherwise the DID itself is
+ * the label. No cached document is consulted.
+ *
+ * allowUnresolvedDevIdentity keeps offline development and tests working when
+ * resolution fails outright: a handle gets a synthetic DID that no real
+ * account can own, and a DID is accepted without a document. It is never set
+ * in production, and it does not rescue a handle whose DID disowns it.
+ */
+export async function resolveLoginIdentity(
+  identifier: string,
+  opts: { allowUnresolvedDevIdentity: boolean },
+): Promise<{ did: string; handle: string; pdsEndpoint: string | null }> {
+  if (identifier.startsWith('did:')) {
+    try {
+      const doc = await resolveDidFresh(identifier)
+      const claimed = claimedHandle(doc)
+      let handle = identifier
+      if (claimed) {
+        const back = await resolveHandleToDid(claimed)
+        if (back === identifier) handle = claimed
+      }
+      return { did: identifier, handle, pdsEndpoint: pdsEndpointFromDocument(doc) }
+    } catch (err) {
+      if (opts.allowUnresolvedDevIdentity && err instanceof IdentityResolutionError) {
+        return { did: identifier, handle: identifier, pdsEndpoint: null }
+      }
+      throw err
+    }
+  }
+
+  const cleanHandle = identifier.replace(/^@/, '')
+  try {
+    const verified = await resolveVerifiedHandle(cleanHandle)
+    return {
+      did: verified.did,
+      handle: verified.handle,
+      pdsEndpoint: pdsEndpointFromDocument(verified.doc),
+    }
+  } catch (err) {
+    if (
+      opts.allowUnresolvedDevIdentity &&
+      err instanceof IdentityResolutionError &&
+      err.code !== 'HANDLE_MISMATCH'
+    ) {
+      // Development/test only: a placeholder DID derived from the handle.
+      return {
+        did: `did:plc:${Buffer.from(cleanHandle).toString('base64url').slice(0, 24)}`,
+        handle: cleanHandle,
+        pdsEndpoint: null,
+      }
+    }
+    throw err
+  }
+}
+
 export async function createSession(input: ProofBrokerSessionStartInput): Promise<ProofBrokerSessionStartResponse> {
   const db = getDb()
   const identifier = input.identifier.trim()
   const oauthScope = scopeForSurface(input.surface)
 
-  // Real ATProto handle/DID resolution
-  let did: string
-  let handle: string
+  const { did, handle, pdsEndpoint } = await resolveLoginIdentity(identifier, {
+    allowUnresolvedDevIdentity: env.get('NODE_ENV') === 'development' || env.get('NODE_ENV') === 'test',
+  })
+  const authServer = pdsEndpoint ?? env.get('PDS_URL')
 
-  if (identifier.startsWith('did:')) {
-    did = identifier
-    handle = identifier
-  } else {
-    const cleanHandle = identifier.replace(/^@/, '')
-    const resolvedDid = await resolveHandleToDid(cleanHandle)
-
-    if (resolvedDid) {
-      did = resolvedDid
-      handle = cleanHandle
-    } else if (env.get('NODE_ENV') === 'development' || env.get('NODE_ENV') === 'test') {
-      // Fallback for dev/test: synthesize a DID so tests still work
-      did = `did:plc:${Buffer.from(cleanHandle).toString('base64url').slice(0, 24)}`
-      handle = cleanHandle
-    } else {
-      throw new Error(`Could not resolve handle: ${identifier}`)
+  /*
+   * One active session per DID (ux_sessions_active_did). Signing in again
+   * resumes it, as the OAuth callback does, instead of failing the insert:
+   * the session carries the person's INE enrollment, so a new one would also
+   * lose it.
+   */
+  const active = db
+    .prepare("SELECT session_id FROM sessions WHERE did = ? AND status = 'active'")
+    .get(did) as { session_id: string } | undefined
+  if (active) {
+    const resumedAt = nowIso()
+    return {
+      attempt: {
+        sessionId: active.session_id,
+        did,
+        handle,
+        authorizationServer: authServer,
+        authUrl: `${authServer}/oauth/authorize?client_id=m8.broker&request_uri=${encodeURIComponent(`${env.get('SERVICE_URL')}/v1/sessions/oauth/callback`)}`,
+        phaseLabel: 'Resumed',
+        startedAt: resumedAt,
+        resolvedAt: resumedAt,
+      },
+      session: hydrateSession(active.session_id),
     }
   }
-
-  // Resolve PDS endpoint from DID document
-  const pdsEndpoint = await resolvePdsEndpoint(did)
-  const authServer = pdsEndpoint ?? env.get('PDS_URL')
 
   const sessionId = randomUUID()
   const now = nowIso()
@@ -154,7 +224,7 @@ export function buildSession(
       activeSurface: 'civic' as const, surfaceStates: { public: 'Limited' as const, civic: 'Live' as const, dating: 'Muted' as const },
     },
     {
-      id: 'spark', name: 'Spark', handle: `${row.handle}.private`, role: 'Selective dating profile', summary: 'Persona for selective disclosure contexts.',
+      id: 'spark', name: 'Spark', handle: `${row.handle}.private`, role: 'Selective dating profile', summary: 'Persona for dating contexts.',
       activeSurface: 'dating' as const, surfaceStates: { public: 'Muted' as const, civic: 'Muted' as const, dating: 'Live' as const },
     },
   ]

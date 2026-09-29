@@ -21,9 +21,17 @@ export const KARMA_ACTIONS: Record<string, KarmaActionDef> = {
     subjectKey: (d) =>
       typeof d.subjectUri === 'string' && d.subjectUri ? `vote:${d.subjectUri}` : null,
     verify: (sessionId, d) => {
+      // CD-12: nullifiers carry no session_id (and no alias DID). Anchor the
+      // session to its person root the same way the vote path does — through
+      // the INE artifact's person_key.
       const row = getDb()
         .prepare(
-          'SELECT 1 AS found FROM civic_vote_nullifiers WHERE session_id = ? AND subject_uri = ? LIMIT 1',
+          `SELECT 1 AS found
+           FROM proof_artifacts a
+           JOIN person_roots p ON p.person_key = a.person_key
+           JOIN civic_vote_nullifiers n ON n.person_id = p.id
+           WHERE a.session_id = ? AND n.subject_uri = ?
+           LIMIT 1`,
         )
         .get(sessionId, d.subjectUri)
       return row !== undefined

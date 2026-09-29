@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, verify, type JsonWebKey, type KeyObject } from 'node:crypto'
-import { resolveDidWithCache } from './didResolver.js'
+import { resolveDidForSecurity } from './didResolver.js'
 import type { CommunityAction, CommunityActionVote } from '../types/index.js'
 import { appError } from '../utils/errors.js'
 
@@ -198,7 +198,7 @@ export async function verifyCommunityVoteSignature(
 ): Promise<CommunityVoteVerificationResult> {
   validateNonce(input.nonce)
 
-  const didDocument = await resolveDidWithCache(input.adminDid)
+  const didDocument = await resolveDidForSecurity(input.adminDid)
   if (!didDocument) {
     throw appError('Could not resolve admin DID for vote verification', 503, 'DID_RESOLUTION_FAILED')
   }

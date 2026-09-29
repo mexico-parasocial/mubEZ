@@ -66,7 +66,11 @@ describe('identity wallet issuer keys', () => {
     assert.equal(issuers[0].did, issuerDid)
     assert.equal(issuers[0].keyId, issuerKeyId)
 
-    const result = verifyWalletPresentation(request, presentation, issuers)
+    const result = verifyWalletPresentation(request, presentation, {
+      expectedSubjectDid: 'did:plc:issuer-subject',
+      trustedIssuers: issuers,
+      revocationStatus: () => 'active',
+    })
     assert.equal(result.valid, true)
   })
 
@@ -99,7 +103,11 @@ describe('identity wallet issuer keys', () => {
         issuerKeyId: 'unknown-ed25519-key',
       },
     }
-    const result = verifyWalletPresentation(request, tamperedPresentation, getTrustedIssuers())
+    const result = verifyWalletPresentation(request, tamperedPresentation, {
+      expectedSubjectDid: 'did:plc:unknown-key-subject',
+      trustedIssuers: getTrustedIssuers(),
+      revocationStatus: () => 'active',
+    })
 
     assert.equal(result.valid, false)
     assert.ok(result.errors.includes('credential issuer is not trusted'))
@@ -130,7 +138,11 @@ describe('identity wallet issuer keys', () => {
     const issuers = getTrustedIssuers().map((issuer, index) =>
       index === 0 ? { ...issuer, publicKeyPem: wrongPublicKey } : issuer
     )
-    const result = verifyWalletPresentation(request, presentation, issuers)
+    const result = verifyWalletPresentation(request, presentation, {
+      expectedSubjectDid: 'did:plc:mismatched-key-subject',
+      trustedIssuers: issuers,
+      revocationStatus: () => 'active',
+    })
 
     assert.equal(result.valid, false)
     assert.ok(result.errors.includes('credential issuer signature is invalid'))
@@ -232,7 +244,11 @@ describe('identity wallet issuer keys', () => {
     assert.ok(issuers.some((i) => i.keyId === 'ine-ed25519-new-key'))
     assert.ok(issuers.some((i) => i.keyId === issuerKeyId))
 
-    const result = verifyWalletPresentation(request, presentation, issuers)
+    const result = verifyWalletPresentation(request, presentation, {
+      expectedSubjectDid: 'did:plc:rotation-subject',
+      trustedIssuers: issuers,
+      revocationStatus: () => 'active',
+    })
     assert.equal(result.valid, true)
   })
 
@@ -279,7 +295,11 @@ describe('identity wallet issuer keys', () => {
       },
     }
 
-    const result = verifyWalletPresentation(request, tampered, getTrustedIssuers())
+    const result = verifyWalletPresentation(request, tampered, {
+      expectedSubjectDid: 'did:plc:attacker-subject',
+      trustedIssuers: getTrustedIssuers(),
+      revocationStatus: () => 'active',
+    })
     assert.equal(result.valid, false)
     assert.ok(result.errors.includes('credential issuer is not trusted'))
   })

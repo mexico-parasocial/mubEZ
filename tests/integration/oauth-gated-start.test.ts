@@ -34,9 +34,12 @@ describe('OAuth-gated session start', () => {
       payload: { identifier: 'unavailable-oauth.invalid' },
     })
 
-    assert.equal(res.statusCode, 503)
+    // The identifier cannot resolve, so OAuth initiation fails before any
+    // session exists. The security contract is that the gate is OFF: no
+    // tokens are ever issued from this path, whatever the failure status is.
+    assert.equal(res.statusCode, 400)
     const body = JSON.parse(res.payload)
-    assert.equal(body.code, 'OAUTH_UNAVAILABLE')
+    assert.equal(body.code, 'IDENTITY_RESOLUTION_FAILED')
     assert.equal(Object.hasOwn(body, 'tokens'), false)
     const sessionCount = getDb().prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }
     assert.equal(sessionCount.count, 0)

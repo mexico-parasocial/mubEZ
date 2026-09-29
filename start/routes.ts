@@ -26,6 +26,7 @@ router
 
     // Verifies an already-public cabildeo authorization; returns no identity data.
     router.post('/identity/civic-vote-proof/verify', '#controllers/civic_vote_identity_controller.verifyProof')
+    router.post('/identity/civic-delegation-proof/verify', '#controllers/civic_vote_identity_controller.verifyDelegationProof')
 
     router.get('/issuers', '#controllers/issuers_controller.index')
 
@@ -89,16 +90,30 @@ router
         router.post('/identity/request', '#controllers/identity_wallet_controller.request')
         router.post('/identity/present', '#controllers/identity_wallet_controller.present')
         router.post('/identity/verify', '#controllers/identity_wallet_controller.verify')
+        // iM8 wallet relay (CD-14): identity requests as the presentation
+        // mailbox, and holder-key bindings for INE issuance.
+        router.get('/identity/requests', '#controllers/identity_wallet_controller.pending')
+        router.get('/identity/request/:id', '#controllers/identity_wallet_controller.show')
+        router.post('/identity/request/:id/decline', '#controllers/identity_wallet_controller.decline')
+        router.post('/identity/wallet/binding-requests', '#controllers/wallet_relay_controller.store')
+        router.get('/identity/wallet/binding-requests', '#controllers/wallet_relay_controller.index')
+        router.get('/identity/wallet/binding-requests/:id', '#controllers/wallet_relay_controller.show')
+        router.post('/identity/wallet/binding-requests/:id/fulfill', '#controllers/wallet_relay_controller.fulfill')
+        router.post('/identity/wallet/binding-requests/:id/decline', '#controllers/wallet_relay_controller.decline')
+        router.post('/identity/wallet/binding-requests/:id/collect', '#controllers/wallet_relay_controller.collect')
         router.post('/identity/chat-key-backup', '#controllers/chat_key_backup_controller.createChatKeyBackup')
         router.get('/identity/chat-key-backup', '#controllers/chat_key_backup_controller.getChatKeyBackup')
         router.delete('/identity/chat-key-backup', '#controllers/chat_key_backup_controller.deleteChatKeyBackup')
         router.post('/identity/ine/analyze', '#controllers/ine_controller.ineAnalyze')
         router.post('/identity/ine/verify', '#controllers/ine_controller.ineVerify')
         router.post('/identity/ine/credential', '#controllers/ine_controller.ineCredential')
+        // Development only (404 in production): simulated INE enrollment for local voting.
+        router.post('/identity/ine/dev-enroll', '#controllers/ine_controller.devEnroll')
         router.post('/identity/ine/zkp-verify', '#controllers/zk_proof_controller.zkpVerify')
         router.post('/identity/revoke', '#controllers/revocation_controller.revoke')
         router.post('/identity/ine/zkp-nullifier', '#controllers/zk_proof_controller.zkpNullifier')
         router.post('/identity/civic-vote-proof', '#controllers/civic_vote_identity_controller.issueProof')
+        router.post('/identity/civic-delegation-proof', '#controllers/civic_vote_identity_controller.issueDelegationProof')
 
         router.post('/karma/earn', '#controllers/karma_controller.earn')
         router.get('/karma/me', '#controllers/karma_controller.me')

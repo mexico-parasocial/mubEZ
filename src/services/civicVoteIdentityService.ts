@@ -193,7 +193,7 @@ function cabildeoProofMac(input: CabildeoProofClaim, proofRef: string): string {
  * enrolment by the same human therefore resolves to the row already there,
  * which is what makes one person one vote hold across sessions and devices.
  */
-function resolvePersonRoot(sessionId: string): PersonRoot {
+export function resolvePersonRoot(sessionId: string): PersonRoot {
   const db = getDb()
   const artifact = db
     .prepare(`
@@ -241,7 +241,7 @@ function getExistingNullifier(personId: string, subjectType: string, subjectUri:
 }
 
 
-function getSessionIdentity(sessionId: string): SessionIdentity {
+export function getSessionIdentity(sessionId: string): SessionIdentity {
   const row = getDb()
     .prepare('SELECT did, handle FROM sessions WHERE session_id = ? AND status = ?')
     .get(sessionId, 'active') as SessionIdentity | undefined
@@ -249,7 +249,7 @@ function getSessionIdentity(sessionId: string): SessionIdentity {
   return row
 }
 
-function computeVoteNullifier(personId: string, subjectType: string, subjectUri: string) {
+export function computeVoteNullifier(personId: string, subjectType: string, subjectUri: string) {
   return createHash('sha256')
     .update('m8:civic-vote-nullifier:v1')
     .update('\0')

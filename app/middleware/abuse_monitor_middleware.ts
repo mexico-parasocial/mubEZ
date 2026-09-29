@@ -1,16 +1,9 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
+import { getClientIp } from '#support/http'
 import { recordAbuse } from '../../src/services/abuseMonitor.js'
 
 const MONITORED_STATUS_CODES = new Set([401, 403, 422, 429])
-
-function getClientIp(ctx: HttpContext): string {
-  return (
-    ctx.request.header('x-forwarded-for')?.split(',')[0]?.trim() ??
-    ctx.request.header('x-real-ip') ??
-    ctx.request.ip()
-  )
-}
 
 export default class AbuseMonitorMiddleware {
   async handle(ctx: HttpContext, next: NextFn) {
