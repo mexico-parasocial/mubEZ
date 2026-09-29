@@ -3082,7 +3082,7 @@
         "tags": [
           "Identity"
         ],
-        "summary": "Create a wallet presentation for an identity request.",
+        "summary": "Create a demo m8.identity.presentation.v2 (full-credential disclosure, holder-bound) for an identity request.",
         "security": [
           {
             "bearerAuth": []
@@ -3120,7 +3120,7 @@
         "tags": [
           "Identity"
         ],
-        "summary": "Verify a wallet presentation.",
+        "summary": "Verify an m8.identity.presentation.v2. Full-credential disclosure: every claim in the credential reaches the verifier. Requires an issuer-signed holder key, the session DID as subject, a live single-use request, and an unrevoked credential; v1 is rejected.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3319,7 +3319,7 @@
         "tags": [
           "INE"
         ],
-        "summary": "Issue an INE-backed credential artifact from client-generated age proofs.",
+        "summary": "Issue INE-backed credentials from client-generated age proofs. Requires either holderPublicKey + holderKeyProof (signature over m8.identity.holder-binding.v1:<issuanceChallenge>), or walletBindingRequestId from the iM8 wallet relay; with the latter the credentials are delivered to the wallet and omitted from this response. Issues the full credential and a minimized basicCredential without curp_hash or district_hash; both are holder-bound and share one revocationHash.",
         "security": [
           {
             "bearerAuth": []
@@ -3428,7 +3428,7 @@
         "tags": [
           "Identity"
         ],
-        "summary": "Revoke or suspend an identity proof artifact.",
+        "summary": "Revoke or suspend an INE enrollment of this session, by revocationHash or by proofArtifactId (a replacement device knows only the latter).",
         "security": [
           {
             "bearerAuth": []
@@ -6214,6 +6214,368 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/identity/requests": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Wallet (CD-14): list live identity requests on this session that wait for a presentation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active, unexpired identity requests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/identity/request/{id}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Requester's poll (CD-14): status, and the minimal verification result exactly once (no subject DID, credential or holder key).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status; result on the first read after the wallet presented.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found, expired, or not in the state the call needs."
+          }
+        }
+      }
+    },
+    "/v1/identity/request/{id}/decline": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Wallet (CD-14): decline an identity request.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Declined.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found, expired, or not in the state the call needs."
+          }
+        }
+      }
+    },
+    "/v1/identity/wallet/binding-requests": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "PARA (CD-14): ask the iM8 wallet for a holder binding against the session's current issuance challenge.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Binding request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "description": "Too many open binding requests."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Wallet (CD-14): binding requests to approve, and issued credentials to collect.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending and issued binding requests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/v1/identity/wallet/binding-requests/{id}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "PARA's poll (CD-14): binding status. Carries no key material.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binding request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found, expired, or not in the state the call needs."
+          }
+        }
+      }
+    },
+    "/v1/identity/wallet/binding-requests/{id}/fulfill": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Wallet (CD-14): bind a device-generated holder key. Verified against the snapshotted issuance challenge before it is stored; the private key never leaves the device.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "holderPublicKey",
+                  "holderKeyProof"
+                ],
+                "properties": {
+                  "holderPublicKey": {
+                    "type": "string",
+                    "description": "Ed25519 SPKI PEM public key, generated on the wallet device."
+                  },
+                  "holderKeyProof": {
+                    "type": "string",
+                    "description": "base64url Ed25519 signature over m8.identity.holder-binding.v1:<issuanceChallenge>."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bound.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found, expired, or not in the state the call needs."
+          },
+          "400": {
+            "description": "Invalid proof, or not pending."
+          }
+        }
+      }
+    },
+    "/v1/identity/wallet/binding-requests/{id}/decline": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Wallet (CD-14): decline a binding request.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Declined.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found, expired, or not in the state the call needs."
+          },
+          "400": {
+            "description": "Invalid proof, or not pending."
+          }
+        }
+      }
+    },
+    "/v1/identity/wallet/binding-requests/{id}/collect": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Wallet (CD-14): collect the credentials issued against this binding. Returned once, then erased from the relay.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "proofArtifactId, credential and basicCredential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found, expired, or not in the state the call needs."
           }
         }
       }

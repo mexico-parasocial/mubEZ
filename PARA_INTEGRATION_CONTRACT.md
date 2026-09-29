@@ -12,7 +12,7 @@ PARA is the authoritative source for:
 - **Party affiliation** (`has_party_affiliation_match`)
 
 PARA does **not** verify:
-- Age eligibility (M8 does this via client-side ZKP + INE credential)
+- Age eligibility (M8 issues the age claim at INE enrollment. The client-side ZK age proof is not yet bound to the INE birth date; see THREAT_MODEL gap 8)
 - Backup coverage (M8 checks PDS state directly)
 - Device trust (M8 manages its own device trust graph)
 
@@ -89,10 +89,10 @@ proof_artifacts.reference ────► para:<handle> or para:<did>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Client (Browser)                                           │
+│  Client (PARA app + iM8 wallet, CD-14)                      │
 │  • Generates salt + ZKP                                     │
-│  • Stores credential + revocationHash                       │
-│  • Presents wallet proofs                                   │
+│  • iM8 holds holder key + credentials; PARA holds neither   │
+│  • iM8 signs v2 presentations (full-credential, linkable)   │
 └──────────────────────┬──────────────────────────────────────┘
                        │ HTTPS
 ┌──────────────────────▼──────────────────────────────────────┐

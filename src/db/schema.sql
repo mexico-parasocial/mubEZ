@@ -146,6 +146,19 @@ CREATE TABLE IF NOT EXISTS identity_requests (
   FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 
+-- 038 (additive table only; identity_requests.result_json is an unguarded
+-- ALTER in 038 and stays out of this baseline).
+CREATE TABLE IF NOT EXISTS wallet_binding_requests (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+  issuance_challenge TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  holder_public_key TEXT,
+  credentials_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   token_hash TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,

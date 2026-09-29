@@ -3,8 +3,28 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { getDb } from '../../src/db/connection.js'
 import { createIdentityRequest, createDemoWalletPresentation, verifyWalletPresentation } from '../../src/services/identityWallet.js'
 import { hydrateSession } from '../../src/services/sessionService.js'
+import {
+  declineIdentityRequest,
+  listActiveIdentityRequests,
+  minimalVerificationResult,
+  readIdentityRequestOutcome,
+  rowToIdentityRequest,
+} from '../../src/services/walletRelayService.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
 import { getSessionId, validateBody } from '#support/http'
+import env from '#start/env'
+import type { CredentialRevocationStatus } from '../../src/services/identityWallet.js'
+
+function credentialRevocationStatus(revocationHash: string): CredentialRevocationStatus {
+  const row = getDb()
+    .prepare('SELECT status FROM proof_artifacts WHERE revocation_hash = ?')
+    .get(revocationHash) as { status: string } | undefined
+  if (!row) return 'unknown'
+  const known: CredentialRevocationStatus[] = ['active', 'pending', 'revoked', 'suspended', 'expired']
+  return known.includes(row.status as CredentialRevocationStatus)
+    ? row.status as CredentialRevocationStatus
+    : 'revoked'
+}
 
 const identityRequestSchema = z.object({
   audienceAppId: z.string().min(1),
@@ -67,20 +87,7 @@ export default class IdentityWalletController {
       return ctx.response.status(404).send({ error: 'Identity request not found' })
     }
 
-    const identityRequest = {
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      nonce: row.nonce as string,
-      audienceAppId: row.audience_app_id as string,
-      audienceAppName: row.audience_app_name as string,
-      purpose: row.purpose as string,
-      merchantIdentifier: row.merchant_identifier as string,
-      requestedElements: JSON.parse(row.requested_elements_json as string),
-      status: row.status as 'active' | 'used' | 'expired',
-      createdAt: row.created_at as string,
-      expiresAt: row.expires_at as string,
-      usedAt: row.used_at as string | null,
-    }
+    const identityRequest = rowToIdentityRequest(row)
 
     const session = hydrateSession(sessionId)
     const presentation = await createDemoWalletPresentation({
@@ -103,28 +110,63 @@ export default class IdentityWalletController {
       return ctx.response.status(404).send({ error: 'Identity request not found' })
     }
 
-    const identityRequest = {
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      nonce: row.nonce as string,
-      audienceAppId: row.audience_app_id as string,
-      audienceAppName: row.audience_app_name as string,
-      purpose: row.purpose as string,
-      merchantIdentifier: row.merchant_identifier as string,
-      requestedElements: JSON.parse(row.requested_elements_json as string),
-      status: row.status as 'active' | 'used' | 'expired',
-      createdAt: row.created_at as string,
-      expiresAt: row.expires_at as string,
-      usedAt: row.used_at as string | null,
+    const identityRequest = rowToIdentityRequest(row)
+
+    const session = db.prepare('SELECT did FROM sessions WHERE session_id = ?').get(sessionId) as { did: string } | undefined
+    if (!session) {
+      return ctx.response.status(404).send({ error: 'Session not found' })
     }
 
-    const presentation = body.presentation as import('../../src/types/index.js').M8WalletPresentation
-    const result = verifyWalletPresentation(identityRequest, presentation)
+    const result = verifyWalletPresentation(identityRequest, body.presentation, {
+      expectedSubjectDid: session.did,
+      revocationStatus: credentialRevocationStatus,
+      // Every INE credential is recorded in proof_artifacts at issuance. The
+      // demo wallet's credentials are not, so an unknown status is tolerated
+      // only while that wallet can exist, and never in production.
+      rejectUnknownRevocationStatus:
+        env.get('NODE_ENV') === 'production' || !assertDemoPathAllowed(Features.DemoIdentityWalletEnable),
+    })
 
     if (result.valid) {
-      db.prepare('UPDATE identity_requests SET status = ?, used_at = ? WHERE id = ?').run('used', new Date().toISOString(), body.requestId)
+      // Single use: only the first valid presentation consumes the request.
+      const consumed = db.prepare(
+        "UPDATE identity_requests SET status = 'used', used_at = ?, result_json = ? WHERE id = ? AND status = 'active'"
+      ).run(new Date().toISOString(), JSON.stringify(minimalVerificationResult(result)), body.requestId)
+      if (consumed.changes !== 1) {
+        return ctx.response.send({
+          ...result,
+          valid: false,
+          disclosedClaims: {},
+          errors: ['identity request is not active'],
+        })
+      }
     }
 
     return ctx.response.send(result)
+  }
+
+  /** Wallet: live requests on this session waiting for a presentation. */
+  async pending(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    return ctx.response.send({ requests: listActiveIdentityRequests(sessionId) })
+  }
+
+  /** Requester's poll: status, and the minimal result exactly once. */
+  async show(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    const outcome = readIdentityRequestOutcome(sessionId, ctx.params.id)
+    if (!outcome) {
+      return ctx.response.status(404).send({ error: 'Identity request not found' })
+    }
+    return ctx.response.send(outcome)
+  }
+
+  /** Wallet: the holder refused to present. */
+  async decline(ctx: HttpContext) {
+    const sessionId = getSessionId(ctx)
+    if (!declineIdentityRequest(sessionId, ctx.params.id)) {
+      return ctx.response.status(404).send({ error: 'No active identity request with that id' })
+    }
+    return ctx.response.send({ status: 'declined' })
   }
 }

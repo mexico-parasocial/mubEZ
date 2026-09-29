@@ -90,6 +90,17 @@ router
         router.post('/identity/request', '#controllers/identity_wallet_controller.request')
         router.post('/identity/present', '#controllers/identity_wallet_controller.present')
         router.post('/identity/verify', '#controllers/identity_wallet_controller.verify')
+        // iM8 wallet relay (CD-14): identity requests as the presentation
+        // mailbox, and holder-key bindings for INE issuance.
+        router.get('/identity/requests', '#controllers/identity_wallet_controller.pending')
+        router.get('/identity/request/:id', '#controllers/identity_wallet_controller.show')
+        router.post('/identity/request/:id/decline', '#controllers/identity_wallet_controller.decline')
+        router.post('/identity/wallet/binding-requests', '#controllers/wallet_relay_controller.store')
+        router.get('/identity/wallet/binding-requests', '#controllers/wallet_relay_controller.index')
+        router.get('/identity/wallet/binding-requests/:id', '#controllers/wallet_relay_controller.show')
+        router.post('/identity/wallet/binding-requests/:id/fulfill', '#controllers/wallet_relay_controller.fulfill')
+        router.post('/identity/wallet/binding-requests/:id/decline', '#controllers/wallet_relay_controller.decline')
+        router.post('/identity/wallet/binding-requests/:id/collect', '#controllers/wallet_relay_controller.collect')
         router.post('/identity/chat-key-backup', '#controllers/chat_key_backup_controller.createChatKeyBackup')
         router.get('/identity/chat-key-backup', '#controllers/chat_key_backup_controller.getChatKeyBackup')
         router.delete('/identity/chat-key-backup', '#controllers/chat_key_backup_controller.deleteChatKeyBackup')

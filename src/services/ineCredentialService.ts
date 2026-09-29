@@ -4,7 +4,7 @@ import type { createT } from '../i18n/index.js'
 import type { IneExtractedData, IneVerificationResult } from '../types/index.js'
 import { createAnonymousProfile } from './anonymousProfileService.js'
 import { computeCurpHash, computeDistrictHash, computePersonKey } from './curpHash.js'
-import { createIssuerSignedCredential } from './identityWallet.js'
+import { createIssuerSignedCredential, minimizedCredentialClaims } from './identityWallet.js'
 import { hydrateSession } from './sessionService.js'
 import { CIRCUIT_ID, PROOF_SCHEMA_VERSION } from './zkpService.js'
 
@@ -21,9 +21,16 @@ export async function recordIneCredential(opts: {
   verification: IneVerificationResult
   commitment: string
   over21Verified: boolean
+  /**
+   * Holder wallet key, possession already proven by the caller, bound into
+   * every credential issued here. null records the enrollment only and signs
+   * no credential (development enrollment): a credential without a holder key
+   * could never be presented.
+   */
+  holderPublicKey: string | null
   $t: ReturnType<typeof createT>
 }) {
-  const { sessionId, extracted, verification, commitment, over21Verified, $t } = opts
+  const { sessionId, extracted, verification, commitment, over21Verified, holderPublicKey, $t } = opts
   const db = getDb()
   const existingCommitment = db.prepare(`
     SELECT id FROM proof_artifacts
@@ -90,12 +97,27 @@ export async function recordIneCredential(opts: {
     throw error
   }
 
+  /*
+   * Two credentials, both holder-bound and sharing the enrollment's
+   * revocationHash so revoking the enrollment revokes both. Presentations are
+   * full-credential (CD-13), so `credential` — which carries curp_hash and
+   * district_hash — may only answer requests that ask for them; the minimized
+   * `basicCredential` answers everything else without transmitting either.
+   */
   const session = hydrateSession(sessionId)
-  const credential = await createIssuerSignedCredential({
+  const credential = holderPublicKey === null ? null : await createIssuerSignedCredential({
     subjectDid: session.did,
     claims,
     revocationHash,
     expiresAt,
+    holderPublicKey,
+  })
+  const basicCredential = holderPublicKey === null ? null : await createIssuerSignedCredential({
+    subjectDid: session.did,
+    claims: minimizedCredentialClaims(claims),
+    revocationHash,
+    expiresAt,
+    holderPublicKey,
   })
 
   db.prepare(`
@@ -109,9 +131,14 @@ export async function recordIneCredential(opts: {
       curpHash: claims.curp_hash,
       commitment,
       revocationHash,
-      credentialId: credential.id,
-      issuerDid: credential.issuerDid,
-      issuerKeyId: credential.issuerKeyId,
+      ...(credential && basicCredential
+        ? {
+            credentialId: credential.id,
+            basicCredentialId: basicCredential.id,
+            issuerDid: credential.issuerDid,
+            issuerKeyId: credential.issuerKeyId,
+          }
+        : {}),
     }),
     new Date().toISOString(),
   )
@@ -122,6 +149,7 @@ export async function recordIneCredential(opts: {
     ok: true as const,
     body: {
       credential,
+      basicCredential,
       proofArtifactId,
       verificationId: verification.verificationId,
       commitment,
