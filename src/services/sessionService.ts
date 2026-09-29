@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto'
 import env from '#start/env'
 import { getDb } from '../db/connection.js'
-import { resolveHandleToDid, resolvePdsEndpoint } from './didResolver.js'
+import {
+  IdentityResolutionError,
+  claimedHandle,
+  pdsEndpointFromDocument,
+  resolveDidFresh,
+  resolveHandleToDid,
+  resolveVerifiedHandle,
+} from './didResolver.js'
 import { ensureIssuanceChallenge } from './issuanceChallenge.js'
 import { PROOF_BROKER_CLAIM_TYPES } from '../types/index.js'
 import { scopeForSurface } from './scopePolicy.js'
@@ -21,36 +28,73 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+/**
+ * Resolves the identity a session is created for, fresh and fail-closed
+ * (atproto handle spec; OAuth spec cache guidance). A handle must be claimed
+ * back by its DID's current document. A DID must resolve; its handle is
+ * recorded only when it verifies bidirectionally, otherwise the DID itself is
+ * the label. No cached document is consulted.
+ *
+ * allowUnresolvedDevIdentity keeps offline development and tests working when
+ * resolution fails outright: a handle gets a synthetic DID that no real
+ * account can own, and a DID is accepted without a document. It is never set
+ * in production, and it does not rescue a handle whose DID disowns it.
+ */
+export async function resolveLoginIdentity(
+  identifier: string,
+  opts: { allowUnresolvedDevIdentity: boolean },
+): Promise<{ did: string; handle: string; pdsEndpoint: string | null }> {
+  if (identifier.startsWith('did:')) {
+    try {
+      const doc = await resolveDidFresh(identifier)
+      const claimed = claimedHandle(doc)
+      let handle = identifier
+      if (claimed) {
+        const back = await resolveHandleToDid(claimed)
+        if (back === identifier) handle = claimed
+      }
+      return { did: identifier, handle, pdsEndpoint: pdsEndpointFromDocument(doc) }
+    } catch (err) {
+      if (opts.allowUnresolvedDevIdentity && err instanceof IdentityResolutionError) {
+        return { did: identifier, handle: identifier, pdsEndpoint: null }
+      }
+      throw err
+    }
+  }
+
+  const cleanHandle = identifier.replace(/^@/, '')
+  try {
+    const verified = await resolveVerifiedHandle(cleanHandle)
+    return {
+      did: verified.did,
+      handle: verified.handle,
+      pdsEndpoint: pdsEndpointFromDocument(verified.doc),
+    }
+  } catch (err) {
+    if (
+      opts.allowUnresolvedDevIdentity &&
+      err instanceof IdentityResolutionError &&
+      err.code !== 'HANDLE_MISMATCH'
+    ) {
+      // Development/test only: a placeholder DID derived from the handle.
+      return {
+        did: `did:plc:${Buffer.from(cleanHandle).toString('base64url').slice(0, 24)}`,
+        handle: cleanHandle,
+        pdsEndpoint: null,
+      }
+    }
+    throw err
+  }
+}
+
 export async function createSession(input: ProofBrokerSessionStartInput): Promise<ProofBrokerSessionStartResponse> {
   const db = getDb()
   const identifier = input.identifier.trim()
   const oauthScope = scopeForSurface(input.surface)
 
-  // Real ATProto handle/DID resolution
-  let did: string
-  let handle: string
-
-  if (identifier.startsWith('did:')) {
-    did = identifier
-    handle = identifier
-  } else {
-    const cleanHandle = identifier.replace(/^@/, '')
-    const resolvedDid = await resolveHandleToDid(cleanHandle)
-
-    if (resolvedDid) {
-      did = resolvedDid
-      handle = cleanHandle
-    } else if (env.get('NODE_ENV') === 'development' || env.get('NODE_ENV') === 'test') {
-      // Fallback for dev/test: synthesize a DID so tests still work
-      did = `did:plc:${Buffer.from(cleanHandle).toString('base64url').slice(0, 24)}`
-      handle = cleanHandle
-    } else {
-      throw new Error(`Could not resolve handle: ${identifier}`)
-    }
-  }
-
-  // Resolve PDS endpoint from DID document
-  const pdsEndpoint = await resolvePdsEndpoint(did)
+  const { did, handle, pdsEndpoint } = await resolveLoginIdentity(identifier, {
+    allowUnresolvedDevIdentity: env.get('NODE_ENV') === 'development' || env.get('NODE_ENV') === 'test',
+  })
   const authServer = pdsEndpoint ?? env.get('PDS_URL')
 
   /*
