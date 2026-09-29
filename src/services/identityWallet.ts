@@ -1,4 +1,5 @@
 import {
+  createPublicKey,
   generateKeyPairSync,
   randomBytes,
   randomUUID,
@@ -6,6 +7,7 @@ import {
   verify,
   type KeyObject,
 } from 'node:crypto'
+import { z } from 'zod'
 import env from '#start/env'
 import { Features, isFeatureEnabled } from './features.js'
 import {
@@ -224,7 +226,7 @@ function stableJson(value: unknown): string {
 }
 
 function signedCredentialPayload(credential: Omit<M8IdentityCredential, 'signature'>) {
-  return stableJson({
+  const payload: Record<string, unknown> = {
     id: credential.id,
     issuerDid: credential.issuerDid,
     issuerKeyId: credential.issuerKeyId,
@@ -234,7 +236,13 @@ function signedCredentialPayload(credential: Omit<M8IdentityCredential, 'signatu
     claims: credential.claims,
     revocationHash: credential.revocationHash,
     signatureAlg: credential.signatureAlg,
-  })
+  }
+  // Omitted rather than null so credentials issued before holder binding keep
+  // verifying; adding a holder key to one of them breaks its signature.
+  if (credential.holderPublicKey !== undefined) {
+    payload.holderPublicKey = credential.holderPublicKey
+  }
+  return stableJson(payload)
 }
 
 function signedPresentationPayload(presentation: Omit<M8WalletPresentation, 'signature'>) {
@@ -245,8 +253,37 @@ function signPayload(payload: string, privateKey: KeyObject) {
   return base64url(sign(null, Buffer.from(payload), privateKey))
 }
 
-function verifyPayload(payload: string, signature: string, publicKeyPem: string) {
-  return verify(null, Buffer.from(payload), publicKeyPem, Buffer.from(signature, 'base64url'))
+function verifyPayload(payload: string, signature: string, publicKey: string | KeyObject) {
+  try {
+    return verify(null, Buffer.from(payload), publicKey, Buffer.from(signature, 'base64url'))
+  } catch {
+    return false
+  }
+}
+
+/** Parses an Ed25519 SPKI PEM public key; null for anything else. */
+export function parseHolderPublicKey(pem: unknown): KeyObject | null {
+  if (typeof pem !== 'string' || pem.length > 1024) return null
+  try {
+    const key = createPublicKey({ key: pem, format: 'pem', type: 'spki' })
+    return key.asymmetricKeyType === 'ed25519' ? key : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What a wallet signs at issuance to prove it holds the key it asks the
+ * issuer to bind. The issuance challenge is single-use and session-scoped.
+ */
+export function holderBindingMessage(issuanceChallenge: string) {
+  return `m8.identity.holder-binding.v1:${issuanceChallenge}`
+}
+
+export function verifyHolderKeyProof(holderPublicKey: string, issuanceChallenge: string, proof: string) {
+  const key = parseHolderPublicKey(holderPublicKey)
+  if (!key) return false
+  return verifyPayload(holderBindingMessage(issuanceChallenge), proof, key)
 }
 
 function validateRequestedElements(elements: M8IdentityRequestInput['requestedElements']) {
@@ -307,7 +344,15 @@ export async function createIssuerSignedCredential(params: {
   claims: M8IdentityCredentialClaims
   revocationHash: string
   expiresAt?: string
+  /**
+   * Required: a credential without an issuer-signed holder key cannot be
+   * presented, so none is issued. Callers must have verified possession.
+   */
+  holderPublicKey: string
 }): Promise<M8IdentityCredential> {
+  if (!parseHolderPublicKey(params.holderPublicKey)) {
+    throw new Error('holderPublicKey must be an Ed25519 SPKI PEM public key')
+  }
   const signer = getIssuerSigner()
   const issuer = await signer.getInfo()
   const unsignedCredential: Omit<M8IdentityCredential, 'signature'> = {
@@ -319,6 +364,7 @@ export async function createIssuerSignedCredential(params: {
     expiresAt: params.expiresAt ?? addSeconds(365 * 24 * 60 * 60),
     claims: params.claims,
     revocationHash: params.revocationHash,
+    holderPublicKey: params.holderPublicKey.trim(),
     signatureAlg: 'Ed25519',
   }
 
@@ -330,6 +376,43 @@ export async function createIssuerSignedCredential(params: {
   }
 }
 
+/**
+ * Wallet side: signs a full-credential presentation of `credential` for
+ * `request` with the holder's private key. Every claim in the credential
+ * reaches the verifier; `disclosedClaimIds` only names which ones the holder
+ * asserts for this request.
+ */
+export function signWalletPresentation(params: {
+  request: Pick<M8IdentityRequest, 'id' | 'nonce' | 'audienceAppId'>
+  credential: M8IdentityCredential
+  disclosedClaimIds: M8IdentityElementId[]
+  holderPrivateKey: KeyObject
+}): M8WalletPresentation {
+  const disclosedClaims = Object.fromEntries(
+    params.disclosedClaimIds
+      .filter((id) => Object.hasOwn(params.credential.claims, id))
+      .map((id) => [id, params.credential.claims[id]])
+  ) as M8IdentityCredentialClaims
+
+  const unsignedPresentation: Omit<M8WalletPresentation, 'signature'> = {
+    type: PRESENTATION_TYPE,
+    disclosure: 'full-credential',
+    requestId: params.request.id,
+    nonce: params.request.nonce,
+    audienceAppId: params.request.audienceAppId,
+    credential: params.credential,
+    disclosedClaims,
+    issuedAt: nowIso(),
+    expiresAt: addSeconds(PRESENTATION_TTL_SECONDS),
+    signatureAlg: 'Ed25519',
+  }
+
+  return {
+    ...unsignedPresentation,
+    signature: signPayload(signedPresentationPayload(unsignedPresentation), params.holderPrivateKey),
+  }
+}
+
 export async function createDemoWalletPresentation(params: {
   request: M8IdentityRequest
   subjectDid: string
@@ -338,15 +421,21 @@ export async function createDemoWalletPresentation(params: {
   const selected = new Set(
     params.selectedElementIds ?? params.request.requestedElements.map((element) => element.id)
   )
-  const claims: M8IdentityCredentialClaims = {
+  const demoClaims: M8IdentityCredentialClaims = {
     age_over_18: true,
     age_over_21: true,
     citizenship: 'MX',
     district_hash: 'sha256:district:mx-jal-10',
     curp_hash: 'sha256:curp:redacted-demo',
   }
-  const disclosedClaims = Object.fromEntries(
-    Object.entries(claims).filter(([key]) => selected.has(key as M8IdentityElementId))
+  /*
+   * Full-credential disclosure reveals every claim the credential holds, so
+   * the demo issuer mints a credential holding only the selected claims. This
+   * is issuance, signed over exactly these claims — not redaction of a signed
+   * credential, which would break its signature.
+   */
+  const claims = Object.fromEntries(
+    Object.entries(demoClaims).filter(([key]) => selected.has(key as M8IdentityElementId))
   ) as M8IdentityCredentialClaims
 
   const walletKey = getDemoWalletKey()
@@ -354,71 +443,218 @@ export async function createDemoWalletPresentation(params: {
     subjectDid: params.subjectDid,
     claims,
     revocationHash: base64url(randomBytes(32)),
+    holderPublicKey: walletKey.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
   })
 
-  const unsignedPresentation: Omit<M8WalletPresentation, 'signature'> = {
-    type: 'm8.identity.presentation.v1',
-    requestId: params.request.id,
-    nonce: params.request.nonce,
-    audienceAppId: params.request.audienceAppId,
+  return signWalletPresentation({
+    request: params.request,
     credential,
-    disclosedClaims,
-    devicePublicKey: walletKey.publicKey.export({ type: 'spki', format: 'pem' }).toString().trim(),
-    issuedAt: nowIso(),
-    expiresAt: addSeconds(PRESENTATION_TTL_SECONDS),
-    signatureAlg: 'Ed25519',
-  }
+    disclosedClaimIds: Object.keys(claims) as M8IdentityElementId[],
+    holderPrivateKey: walletKey.privateKey,
+  })
+}
 
+// ─── Verification ──────────────────────────────────────────────────────────
+
+const PRESENTATION_TYPE = 'm8.identity.presentation.v2' as const
+const LEGACY_PRESENTATION_TYPE = 'm8.identity.presentation.v1'
+const CLOCK_SKEW_MS = 60 * 1000
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/
+
+/**
+ * Identifiers that link a presentation to a person across verifiers. Under
+ * full-credential disclosure they cannot be withheld, so a credential that
+ * carries one may only be presented to a request that asked for it.
+ */
+export const LINKABLE_IDENTITY_ELEMENTS: readonly M8IdentityElementId[] = ['curp_hash', 'district_hash']
+
+/**
+ * Claims for the data-minimized credential issued next to the full one: no
+ * linkable identifier, and only claims that assert something proven (an
+ * unproven `age_over_21: false` is left out rather than disclosed).
+ */
+export function minimizedCredentialClaims(claims: M8IdentityCredentialClaims): M8IdentityCredentialClaims {
+  return Object.fromEntries(
+    Object.entries(claims).filter(([id, value]) =>
+      !LINKABLE_IDENTITY_ELEMENTS.includes(id as M8IdentityElementId) && value !== false && value !== undefined
+    )
+  ) as M8IdentityCredentialClaims
+}
+
+const isoInstant = z.string().regex(ISO_INSTANT)
+const claimsSchema = z.object({
+  age_over_18: z.boolean().optional(),
+  age_over_21: z.boolean().optional(),
+  citizenship: z.string().min(1).max(256).optional(),
+  district_hash: z.string().min(1).max(256).optional(),
+  curp_hash: z.string().min(1).max(256).optional(),
+  verified_public_figure: z.boolean().optional(),
+}).strict()
+
+const credentialSchema = z.object({
+  id: z.string().min(1),
+  issuerDid: z.string().min(1),
+  issuerKeyId: z.string().min(1),
+  subjectDid: z.string().min(1),
+  issuedAt: isoInstant,
+  expiresAt: isoInstant,
+  claims: claimsSchema,
+  revocationHash: z.string().min(1),
+  holderPublicKey: z.string().min(1).optional(),
+  signatureAlg: z.literal('Ed25519'),
+  signature: z.string().min(1),
+}).strict()
+
+const presentationSchema = z.object({
+  type: z.literal(PRESENTATION_TYPE),
+  disclosure: z.literal('full-credential'),
+  requestId: z.string().min(1),
+  nonce: z.string().min(1),
+  audienceAppId: z.string().min(1),
+  credential: credentialSchema,
+  disclosedClaims: claimsSchema,
+  issuedAt: isoInstant,
+  expiresAt: isoInstant,
+  signatureAlg: z.literal('Ed25519'),
+  signature: z.string().min(1),
+}).strict()
+
+export type CredentialRevocationStatus = 'active' | 'pending' | 'revoked' | 'suspended' | 'expired' | 'unknown'
+
+export type PresentationVerificationOptions = {
+  /** DID of the session the request belongs to; the credential subject must match it. */
+  expectedSubjectDid: string
+  trustedIssuers?: M8TrustedIssuer[]
+  /** Status of the credential's revocationHash in the issuer's registry. */
+  revocationStatus: (revocationHash: string) => CredentialRevocationStatus
+  /** Reject credentials the registry does not know. Default true. */
+  rejectUnknownRevocationStatus?: boolean
+}
+
+function invalidResult(
+  request: M8IdentityRequest,
+  errors: string[],
+  checkedAt: string,
+): M8IdentityVerificationResult {
   return {
-    ...unsignedPresentation,
-    signature: signPayload(signedPresentationPayload(unsignedPresentation), walletKey.privateKey),
+    valid: false,
+    requestId: request.id,
+    presentationId: '',
+    issuerDid: null,
+    issuerName: null,
+    subjectDid: null,
+    disclosedClaims: {},
+    disclosure: 'full-credential',
+    revealedClaimIds: [],
+    checkedAt,
+    errors,
+    warnings: [],
   }
 }
 
 export function verifyWalletPresentation(
   request: M8IdentityRequest,
-  presentation: M8WalletPresentation,
-  trustedIssuers = getTrustedIssuers()
+  input: unknown,
+  options: PresentationVerificationOptions,
 ): M8IdentityVerificationResult {
   const errors: string[] = []
   const warnings: string[] = []
   const checkedAt = nowIso()
-  const issuer = trustedIssuers.find((entry) =>
-    entry.did === presentation.credential?.issuerDid &&
-    entry.keyId === presentation.credential?.issuerKeyId
-  ) ?? null
+  const now = Date.now()
 
+  if ((input as { type?: unknown } | null)?.type === LEGACY_PRESENTATION_TYPE) {
+    return invalidResult(request, [
+      `${LEGACY_PRESENTATION_TYPE} is not accepted: it has no issuer-signed holder key; present a ${PRESENTATION_TYPE} credential`,
+    ], checkedAt)
+  }
+  const parsed = presentationSchema.safeParse(input)
+  if (!parsed.success) {
+    return invalidResult(
+      request,
+      parsed.error.issues.map((issue) => `malformed presentation: ${issue.path.join('.') || '(root)'}: ${issue.message}`),
+      checkedAt,
+    )
+  }
+  const presentation = parsed.data as M8WalletPresentation
+  const credential = presentation.credential
+
+  // ─── Request binding and freshness ─────────────────────────────────────
   if (request.status !== 'active') errors.push('identity request is not active')
-  if (new Date(request.expiresAt).getTime() <= Date.now()) errors.push('identity request expired')
-  if (presentation.type !== 'm8.identity.presentation.v1') errors.push('unsupported presentation type')
+  if (!(Date.parse(request.expiresAt) > now)) errors.push('identity request expired')
   if (presentation.requestId !== request.id) errors.push('presentation requestId does not match')
   if (presentation.nonce !== request.nonce) errors.push('presentation nonce does not match')
   if (presentation.audienceAppId !== request.audienceAppId) {
     errors.push('presentation audience does not match')
   }
-  if (new Date(presentation.expiresAt).getTime() <= Date.now()) {
-    errors.push('presentation expired')
+  const presentedAt = Date.parse(presentation.issuedAt)
+  const presentationExpiresAt = Date.parse(presentation.expiresAt)
+  if (!(presentationExpiresAt > now)) errors.push('presentation expired')
+  if (presentedAt > now + CLOCK_SKEW_MS) errors.push('presentation issuedAt is in the future')
+  if (presentationExpiresAt - presentedAt > PRESENTATION_TTL_SECONDS * 1000 + CLOCK_SKEW_MS) {
+    errors.push('presentation lifetime exceeds the allowed maximum')
   }
-  if (new Date(presentation.credential.expiresAt).getTime() <= Date.now()) {
-    errors.push('credential expired')
-  }
+
+  // ─── Issuer ────────────────────────────────────────────────────────────
+  const trustedIssuers = options.trustedIssuers ?? getTrustedIssuers()
+  const issuer = trustedIssuers.find((entry) =>
+    entry.did === credential.issuerDid && entry.keyId === credential.issuerKeyId
+  ) ?? null
   if (!issuer) {
     errors.push('credential issuer is not trusted')
   } else if (issuer.status !== 'active' && issuer.status !== 'previous') {
     errors.push(`credential issuer is ${issuer.status}`)
+  } else {
+    const { signature, ...credentialPayload } = credential
+    if (!verifyPayload(signedCredentialPayload(credentialPayload), signature, issuer.publicKeyPem)) {
+      errors.push('credential issuer signature is invalid')
+    }
+  }
+  if (!(Date.parse(credential.expiresAt) > now)) errors.push('credential expired')
+  if (Date.parse(credential.issuedAt) > now + CLOCK_SKEW_MS) errors.push('credential issuedAt is in the future')
+
+  // ─── Holder binding and subject ────────────────────────────────────────
+  const holderKey = parseHolderPublicKey(credential.holderPublicKey)
+  if (!credential.holderPublicKey) {
+    errors.push('credential has no issuer-signed holder key')
+  } else if (!holderKey) {
+    errors.push('credential holder key is not an Ed25519 public key')
+  } else {
+    const { signature, ...presentationPayload } = presentation
+    if (!verifyPayload(signedPresentationPayload(presentationPayload), signature, holderKey)) {
+      errors.push('wallet presentation signature is invalid')
+    }
+  }
+  if (credential.subjectDid !== options.expectedSubjectDid) {
+    errors.push('credential subject does not match the requesting session')
   }
 
+  // ─── Revocation ────────────────────────────────────────────────────────
+  const revocation = options.revocationStatus(credential.revocationHash)
+  if (revocation === 'unknown') {
+    if (options.rejectUnknownRevocationStatus ?? true) {
+      errors.push('credential revocation status is unknown')
+    } else {
+      warnings.push('credential revocation status is unknown')
+    }
+  } else if (revocation !== 'active') {
+    errors.push(`credential is ${revocation}`)
+  }
+
+  // ─── Claims ────────────────────────────────────────────────────────────
   const requested = new Set(request.requestedElements.map((element) => element.id))
+  const credentialClaims = credential.claims as Record<string, unknown>
   const disclosed = Object.keys(presentation.disclosedClaims) as M8IdentityElementId[]
   for (const claimId of disclosed) {
     if (!requested.has(claimId)) errors.push(`claim ${claimId} was not requested`)
-    if (issuer && !issuer.allowedElements.includes(claimId)) {
-      errors.push(`issuer is not allowed to attest ${claimId}`)
+    if (!Object.hasOwn(credentialClaims, claimId)) {
+      errors.push(`claim ${claimId} is not in the credential`)
+    } else if (presentation.disclosedClaims[claimId] !== credentialClaims[claimId]) {
+      errors.push(`claim ${claimId} does not match the credential`)
     }
   }
 
   for (const element of request.requestedElements) {
-    if (element.required && !(element.id in presentation.disclosedClaims)) {
+    if (element.required && !Object.hasOwn(presentation.disclosedClaims, element.id)) {
       errors.push(`required claim ${element.id} was not disclosed`)
     }
     if (element.intentToStore.mode === 'may-store-until-revoked') {
@@ -426,26 +662,33 @@ export function verifyWalletPresentation(
     }
   }
 
-  if (issuer) {
-    const { signature, ...credentialPayload } = presentation.credential
-    if (!verifyPayload(signedCredentialPayload(credentialPayload), signature, issuer.publicKeyPem)) {
-      errors.push('credential issuer signature is invalid')
+  // Full-credential disclosure: everything in the credential was revealed.
+  const revealedClaimIds = Object.keys(credentialClaims) as M8IdentityElementId[]
+  for (const claimId of revealedClaimIds) {
+    if (issuer && !issuer.allowedElements.includes(claimId)) {
+      errors.push(`issuer is not allowed to attest ${claimId}`)
+    }
+    if (requested.has(claimId)) continue
+    if (LINKABLE_IDENTITY_ELEMENTS.includes(claimId)) {
+      errors.push(`credential reveals unrequested linkable claim ${claimId}; full-credential disclosure cannot withhold it`)
+    } else {
+      warnings.push(`credential revealed unrequested claim ${claimId}`)
     }
   }
 
-  const { signature, ...presentationPayload } = presentation
-  if (!verifyPayload(signedPresentationPayload(presentationPayload), signature, presentation.devicePublicKey)) {
-    errors.push('wallet presentation signature is invalid')
-  }
-
+  const valid = errors.length === 0
   return {
-    valid: errors.length === 0,
+    valid,
     requestId: request.id,
     presentationId: `${presentation.requestId}:${presentation.nonce}`,
-    issuerDid: issuer?.did ?? presentation.credential?.issuerDid ?? null,
+    issuerDid: issuer?.did ?? credential.issuerDid,
     issuerName: issuer?.name ?? null,
-    subjectDid: presentation.credential?.subjectDid ?? null,
-    disclosedClaims: errors.length === 0 ? presentation.disclosedClaims : {},
+    subjectDid: credential.subjectDid,
+    disclosedClaims: valid
+      ? Object.fromEntries(disclosed.map((id) => [id, credentialClaims[id]])) as M8IdentityCredentialClaims
+      : {},
+    disclosure: 'full-credential',
+    revealedClaimIds,
     checkedAt,
     errors,
     warnings,

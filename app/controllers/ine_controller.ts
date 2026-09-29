@@ -6,6 +6,7 @@ import { getDb } from '../../src/db/connection.js'
 import { simulateIneExtraction, simulateIneVerification } from '../../src/services/ineSimulation.js'
 import { generateAgeProof, verifyAgeProof, isValidCommitment } from '../../src/services/zkpService.js'
 import { recordIneCredential } from '../../src/services/ineCredentialService.js'
+import { verifyHolderKeyProof } from '../../src/services/identityWallet.js'
 import { hydrateSession } from '../../src/services/sessionService.js'
 import { isValidIssuanceChallenge, rotateIssuanceChallenge } from '../../src/services/issuanceChallenge.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
@@ -24,6 +25,12 @@ const ineCredentialSchema = z.object({
     over18: ageProofSchema,
     over21: ageProofSchema.optional(),
   }).strict(),
+  // Wallet key the issuer binds into the credentials, with a signature over
+  // holderBindingMessage(issuanceChallenge) proving possession. Required: a
+  // credential without it could never be presented. Optional in the schema
+  // only so its absence gets a specific error code.
+  holderPublicKey: z.string().min(1).max(1024).optional(),
+  holderKeyProof: z.string().min(1).max(256).optional(),
 }).strict()
 
 type AgeProofPayload = z.infer<typeof ageProofSchema>
@@ -87,6 +94,16 @@ export default class IneController {
     const body = validateBody(ctx, ineCredentialSchema)
     if (!body) return
 
+    // Checked before the challenge is consumed, so a client that cannot
+    // bind a holder key does not burn it.
+    const { holderPublicKey, holderKeyProof } = body
+    if (holderPublicKey === undefined || holderKeyProof === undefined) {
+      return ctx.response.status(400).send({
+        error: 'holderPublicKey and holderKeyProof are required',
+        code: 'HOLDER_KEY_PROOF_REQUIRED',
+      })
+    }
+
     // Replay protection: the issuance challenge is single-use. A wrong
     // challenge is rejected without rotation (so an attacker cannot burn the
     // legitimate one); a valid challenge is rotated immediately so this exact
@@ -98,6 +115,13 @@ export default class IneController {
       })
     }
     rotateIssuanceChallenge(sessionId)
+
+    if (!verifyHolderKeyProof(holderPublicKey, body.issuanceChallenge, holderKeyProof)) {
+      return ctx.response.status(400).send({
+        error: 'Invalid holder key or proof of possession',
+        code: 'HOLDER_KEY_PROOF_INVALID',
+      })
+    }
 
     const $t = t(ctx)
     const extracted = body.extracted as import('../../src/types/index.js').IneExtractedData
@@ -131,6 +155,7 @@ export default class IneController {
       verification,
       commitment: over18.commitment,
       over21Verified,
+      holderPublicKey,
       $t,
     })
     if (!result.ok) {
@@ -188,6 +213,7 @@ export default class IneController {
       verification,
       commitment: over18.commitment,
       over21Verified: false,
+      holderPublicKey: null,
       $t: t(ctx),
     })
     if (!result.ok) {

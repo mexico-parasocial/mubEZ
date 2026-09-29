@@ -3082,7 +3082,7 @@
         "tags": [
           "Identity"
         ],
-        "summary": "Create a wallet presentation for an identity request.",
+        "summary": "Create a demo m8.identity.presentation.v2 (full-credential disclosure, holder-bound) for an identity request.",
         "security": [
           {
             "bearerAuth": []
@@ -3120,7 +3120,7 @@
         "tags": [
           "Identity"
         ],
-        "summary": "Verify a wallet presentation.",
+        "summary": "Verify an m8.identity.presentation.v2. Full-credential disclosure: every claim in the credential reaches the verifier. Requires an issuer-signed holder key, the session DID as subject, a live single-use request, and an unrevoked credential; v1 is rejected.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3319,7 +3319,7 @@
         "tags": [
           "INE"
         ],
-        "summary": "Issue an INE-backed credential artifact from client-generated age proofs.",
+        "summary": "Issue INE-backed credentials from client-generated age proofs. Requires holderPublicKey (Ed25519 SPKI PEM) and holderKeyProof (signature over m8.identity.holder-binding.v1:<issuanceChallenge>). Returns the full credential and a minimized basicCredential without curp_hash or district_hash; both are holder-bound and share one revocationHash.",
         "security": [
           {
             "bearerAuth": []

@@ -5,6 +5,19 @@ import { createIdentityRequest, createDemoWalletPresentation, verifyWalletPresen
 import { hydrateSession } from '../../src/services/sessionService.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
 import { getSessionId, validateBody } from '#support/http'
+import env from '#start/env'
+import type { CredentialRevocationStatus } from '../../src/services/identityWallet.js'
+
+function credentialRevocationStatus(revocationHash: string): CredentialRevocationStatus {
+  const row = getDb()
+    .prepare('SELECT status FROM proof_artifacts WHERE revocation_hash = ?')
+    .get(revocationHash) as { status: string } | undefined
+  if (!row) return 'unknown'
+  const known: CredentialRevocationStatus[] = ['active', 'pending', 'revoked', 'suspended', 'expired']
+  return known.includes(row.status as CredentialRevocationStatus)
+    ? row.status as CredentialRevocationStatus
+    : 'revoked'
+}
 
 const identityRequestSchema = z.object({
   audienceAppId: z.string().min(1),
@@ -118,13 +131,37 @@ export default class IdentityWalletController {
       usedAt: row.used_at as string | null,
     }
 
-    const presentation = body.presentation as import('../../src/types/index.js').M8WalletPresentation
-    const result = verifyWalletPresentation(identityRequest, presentation)
+    const session = db.prepare('SELECT did FROM sessions WHERE session_id = ?').get(sessionId) as { did: string } | undefined
+    if (!session) {
+      return ctx.response.status(404).send({ error: 'Session not found' })
+    }
+
+    const result = verifyWalletPresentation(identityRequest, body.presentation, {
+      expectedSubjectDid: session.did,
+      revocationStatus: credentialRevocationStatus,
+      // Every INE credential is recorded in proof_artifacts at issuance. The
+      // demo wallet's credentials are not, so an unknown status is tolerated
+      // only while that wallet can exist, and never in production.
+      rejectUnknownRevocationStatus:
+        env.get('NODE_ENV') === 'production' || !assertDemoPathAllowed(Features.DemoIdentityWalletEnable),
+    })
 
     if (result.valid) {
-      db.prepare('UPDATE identity_requests SET status = ?, used_at = ? WHERE id = ?').run('used', new Date().toISOString(), body.requestId)
+      // Single use: only the first valid presentation consumes the request.
+      const consumed = db.prepare(
+        "UPDATE identity_requests SET status = 'used', used_at = ? WHERE id = ? AND status = 'active'"
+      ).run(new Date().toISOString(), body.requestId)
+      if (consumed.changes !== 1) {
+        return ctx.response.send({
+          ...result,
+          valid: false,
+          disclosedClaims: {},
+          errors: ['identity request is not active'],
+        })
+      }
     }
 
     return ctx.response.send(result)
   }
+
 }

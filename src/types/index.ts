@@ -68,18 +68,34 @@ export type M8IdentityCredential = {
   expiresAt: string
   claims: M8IdentityCredentialClaims
   revocationHash: string
+  /**
+   * Ed25519 SPKI PEM of the holder's wallet key, covered by the issuer
+   * signature. Only credentials that carry one can be presented. Absent on
+   * credentials issued before holder binding.
+   */
+  holderPublicKey?: string
   signatureAlg: 'Ed25519'
   signature: string
 }
 
+/**
+ * Full-credential disclosure: the verifier receives the whole issuer-signed
+ * credential, every claim in it included. `disclosedClaims` names the subset
+ * the holder asserts for this request; it is not selective disclosure, and
+ * claims outside it are still visible to the verifier. Signed by the key in
+ * `credential.holderPublicKey`.
+ *
+ * v1 (`m8.identity.presentation.v1`) carried a presenter-chosen
+ * `devicePublicKey` and is rejected.
+ */
 export type M8WalletPresentation = {
-  type: 'm8.identity.presentation.v1'
+  type: 'm8.identity.presentation.v2'
+  disclosure: 'full-credential'
   requestId: string
   nonce: string
   audienceAppId: string
   credential: M8IdentityCredential
   disclosedClaims: M8IdentityCredentialClaims
-  devicePublicKey: string
   issuedAt: string
   expiresAt: string
   signatureAlg: 'Ed25519'
@@ -105,6 +121,9 @@ export type M8IdentityVerificationResult = {
   issuerName: string | null
   subjectDid: string | null
   disclosedClaims: M8IdentityCredentialClaims
+  /** Always full-credential: every claim id in revealedClaimIds reached the verifier. */
+  disclosure: 'full-credential'
+  revealedClaimIds: M8IdentityElementId[]
   checkedAt: string
   errors: string[]
   warnings: string[]

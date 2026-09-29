@@ -692,3 +692,90 @@ siguen siendo correlacionables: esto **no cumple aún la identidad cívica priva
 de CD-12**, ni pretende habilitarla. Las otras familias conservan su formato de
 emisión y no adquieren verificación de canje por este cambio. El protocolo
 privado y las reglas de publicación permanecen pendientes.
+
+---
+
+## CD-13 — Wallet presentations are holder-bound and full-credential (`m8.identity.presentation.v2`)
+
+**Decision.** `/identity/verify` accepts only `m8.identity.presentation.v2`. The
+presentation carries the whole issuer-signed credential and is labelled
+`disclosure: "full-credential"`: every claim in the credential reaches the
+verifier. It is not selective disclosure and must not be described as such.
+The presentation is signed by `credential.holderPublicKey`, an Ed25519 key the
+issuer signed into the credential; v1 is rejected outright.
+
+**Problem.** v1 verified the wallet signature against `devicePublicKey`, a key
+the presenter supplied in the same message, so anyone holding a copy of a
+credential could present it. `disclosedClaims` was never compared with the
+signed `credential.claims`, so a holder could assert values the issuer never
+signed. Subject DID, revocation, and date parsing were unchecked (an
+unparseable `expiresAt` passed the expiry test), and a malformed key crashed
+the route with a 500.
+
+**What v2 enforces.** Each disclosed claim exists in `credential.claims` with
+an identical value and type; the claim schema is closed. The credential
+subject is the DID of the session that owns the request. The request is live
+and is consumed atomically on first success (`status = 'active'` in the
+`UPDATE`), so a replay fails. `revocationHash` is looked up in
+`proof_artifacts`; revoked, suspended, pending or expired fail, and an unknown
+hash fails in production. Dates must be ISO instants; presentation lifetime is
+capped at 90 s plus 60 s skew.
+
+**Holder binding at issuance.** `/identity/ine/credential` requires
+`holderPublicKey` and `holderKeyProof`, an Ed25519 signature over
+`m8.identity.holder-binding.v1:<issuanceChallenge>`; a request without them is
+refused with `HOLDER_KEY_PROOF_REQUIRED` before the challenge is consumed.
+`createIssuerSignedCredential` will not sign without a valid Ed25519 holder
+key, so no newly issued credential is unpresentable. Development enrollment
+(`/identity/ine/dev-enroll`) records the enrollment artifact only and signs no
+credential. The challenge is single-use and session-scoped, so the proof cannot
+be replayed into another session.
+
+**Privacy under full disclosure.** Because nothing can be withheld, a
+credential holding a linkable identifier (`curp_hash`, `district_hash`) is
+rejected when the request did not ask for that identifier; other unrequested
+claims produce a warning, and the result lists `revealedClaimIds`. Stripping
+fields from a signed credential breaks its signature and is not an option, so
+minimization happens at issuance: each enrollment issues two credentials under
+the same holder key and `revocationHash` —
+
+- `credential`: every claim, for requests that ask for the identifiers;
+- `basicCredential`: `minimizedCredentialClaims` — proven, non-linkable claims
+  only (`age_over_18`, `citizenship`, and `age_over_21` only when proven).
+
+An age-only request is answered with `basicCredential`; it reveals
+`citizenship` as well (with a warning), which every INE holder has. Revoking
+the enrollment revokes both. The demo wallet likewise *issues* a credential
+over exactly the selected claims.
+
+What minimization does not give: unlinkability. `subjectDid`,
+`holderPublicKey`, `revocationHash` and the credential id are stable across
+presentations of both credentials, so colluding verifiers can correlate them.
+
+**Revocation of unknown hashes.** Every INE credential is recorded in
+`proof_artifacts`. An unknown `revocationHash` is rejected in production and
+whenever the demo wallet is disabled; it is only a warning while the demo
+wallet — the one source of unrecorded credentials — can run.
+
+**Rejected alternatives.**
+
+- *Keep v1 and warn.* The presenter-chosen key makes every v1 presentation
+  forgeable by whoever holds the credential.
+- *Call the current format selective disclosure.* It transmits every claim.
+
+**Migration.** No v1 presentation verifies. Credentials issued before this
+change have no holder key: their issuer signature still verifies (the holder
+key is only in the signed payload when present), but they cannot be presented
+and no route upgrades them in place. They expire on their own `expiresAt`
+(one year from issuance) and remain revocable through `/identity/revoke`;
+holders re-enrol through `/identity/ine/credential` with a holder key. Clients:
+iM8's `src/contracts/identityWallet.ts` and PARA's `src/lib/im8/types.ts` /
+`api.ts` describe v2. PARA's INE issuance stays gated
+(`WALLET_HOLDER_KEY_SUPPORTED = false`, on top of `INE_INTEGRATION_APPROVED`)
+until it stores a holder key; no client signs presentations yet.
+
+**Not built.** Real selective disclosure or unlinkable presentation. A v3
+would need per-claim salted digests signed by the issuer (SD-JWT style) or a
+BBS+ / ZK scheme, a new `type`, and verifiers accepting v2 and v3 in parallel
+until v2 credentials expire. Until then the privacy guarantee is the
+linkable-claim refusal and the minimized credential above, nothing more.

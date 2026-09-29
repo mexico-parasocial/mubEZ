@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto'
 import type { TestApp } from './testApp.js'
 
 /**
@@ -48,6 +48,25 @@ export async function buildAgeProofs(params: {
   }
 }
 
+/**
+ * A wallet holder key and its proof of possession over the issuance
+ * challenge, as /identity/ine/credential requires. On a device the private
+ * key never leaves the wallet.
+ */
+export async function createHolderBinding(issuanceChallenge: string): Promise<{
+  holderPublicKey: string
+  holderKeyProof: string
+  holderPrivateKey: KeyObject
+}> {
+  const { holderBindingMessage } = await import('../../src/services/identityWallet.js')
+  const keys = generateKeyPairSync('ed25519')
+  return {
+    holderPublicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    holderKeyProof: sign(null, Buffer.from(holderBindingMessage(issuanceChallenge)), keys.privateKey).toString('base64url'),
+    holderPrivateKey: keys.privateKey,
+  }
+}
+
 export async function issueIneCredentialWithClientProof(params: {
   app: TestApp
   accessToken: string
@@ -85,12 +104,20 @@ export async function issueIneCredentialWithClientProof(params: {
     headers: { authorization: `Bearer ${params.accessToken}` },
   })
   const { issuanceChallenge } = JSON.parse(me.payload).session
+  const holder = await createHolderBinding(issuanceChallenge)
 
   const credentialResponse = await params.app.inject({
     method: 'POST',
     url: '/v1/identity/ine/credential',
     headers: { authorization: `Bearer ${params.accessToken}` },
-    payload: { extracted, verification, issuanceChallenge, ageProofs: clientProof.ageProofs },
+    payload: {
+      extracted,
+      verification,
+      issuanceChallenge,
+      ageProofs: clientProof.ageProofs,
+      holderPublicKey: holder.holderPublicKey,
+      holderKeyProof: holder.holderKeyProof,
+    },
   })
 
   return {
@@ -98,6 +125,7 @@ export async function issueIneCredentialWithClientProof(params: {
     verification,
     clientProof,
     issuanceChallenge,
+    holderPrivateKey: holder.holderPrivateKey,
     response: credentialResponse,
     body: JSON.parse(credentialResponse.payload),
   }

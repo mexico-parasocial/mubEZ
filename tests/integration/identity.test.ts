@@ -83,7 +83,10 @@ describe('identity wallet integration', () => {
 
     assert.equal(res.statusCode, 200)
     const body = JSON.parse(res.payload)
-    assert.equal(body.type, 'm8.identity.presentation.v1')
+    assert.equal(body.type, 'm8.identity.presentation.v2')
+    assert.equal(body.disclosure, 'full-credential')
+    assert.ok(body.credential.holderPublicKey)
+    assert.equal(Object.hasOwn(body, 'devicePublicKey'), false)
     assert.ok(body.credential.signature)
     assert.ok(body.signature)
   })
@@ -129,5 +132,49 @@ describe('identity wallet integration', () => {
     const body = JSON.parse(res.payload)
     assert.equal(body.valid, true)
     assert.equal(body.errors.length, 0)
+    assert.equal(body.disclosure, 'full-credential')
+    assert.deepEqual(body.disclosedClaims, { age_over_18: true })
+    assert.deepEqual(body.revealedClaimIds, ['age_over_18'])
+
+    // Replay: the same presentation cannot consume the request twice.
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/verify',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { requestId: request.id, presentation },
+    })
+    assert.equal(replay.statusCode, 200)
+    const replayBody = JSON.parse(replay.payload)
+    assert.equal(replayBody.valid, false)
+    assert.ok(replayBody.errors.includes('identity request is not active'))
+    assert.deepEqual(replayBody.disclosedClaims, {})
+  })
+
+  it('POST /v1/identity/verify rejects a malformed presentation without a server error', async () => {
+    const reqRes = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/request',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        audienceAppId: 'test.merchant',
+        audienceAppName: 'Test Merchant',
+        purpose: 'Age verification',
+        requestedElements: [
+          { id: 'age_over_18', intentToStore: { mode: 'will-not-store' }, required: true },
+        ],
+      },
+    })
+    const request = JSON.parse(reqRes.payload)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/verify',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { requestId: request.id, presentation: { type: 'm8.identity.presentation.v2', devicePublicKey: 'garbage' } },
+    })
+    assert.equal(res.statusCode, 200)
+    const body = JSON.parse(res.payload)
+    assert.equal(body.valid, false)
+    assert.ok(body.errors.some((e: string) => e.startsWith('malformed presentation')))
   })
 })

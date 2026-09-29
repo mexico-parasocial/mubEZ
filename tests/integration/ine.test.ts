@@ -4,10 +4,16 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TestApp } from '../helpers/testApp.js'
-import { buildAgeProofs, issueIneCredentialWithClientProof } from '../helpers/clientProof.js'
+import { buildAgeProofs, createHolderBinding, issueIneCredentialWithClientProof } from '../helpers/clientProof.js'
 
 const tmpDir = mkdtempSync(join(tmpdir(), 'm8-test-'))
 process.env.DATABASE_PATH = join(tmpDir, 'ine-test.db')
+
+/** Only the request fields of a fresh holder binding for `challenge`. */
+async function holderFields(challenge: string) {
+  const { holderPublicKey, holderKeyProof } = await createHolderBinding(challenge)
+  return { holderPublicKey, holderKeyProof }
+}
 
 describe('INE verification integration', () => {
   let app: TestApp
@@ -106,11 +112,19 @@ describe('INE verification integration', () => {
       headers: { authorization: `Bearer ${accessToken}` },
     })
     const { issuanceChallenge } = JSON.parse(me.payload).session
+    const holder = await createHolderBinding(issuanceChallenge)
     const res = await app.inject({
       method: 'POST',
       url: '/v1/identity/ine/credential',
       headers: { authorization: `Bearer ${accessToken}` },
-      payload: { extracted, verification, issuanceChallenge, ageProofs: clientProof.ageProofs },
+      payload: {
+        extracted,
+        verification,
+        issuanceChallenge,
+        ageProofs: clientProof.ageProofs,
+        holderPublicKey: holder.holderPublicKey,
+        holderKeyProof: holder.holderKeyProof,
+      },
     })
 
     assert.equal(res.statusCode, 200)
@@ -121,6 +135,12 @@ describe('INE verification integration', () => {
     assert.equal(body.credential.claims.citizenship, 'MX')
     assert.equal(body.credential.claims.age_over_18, true)
     assert.equal(body.credential.claims.age_over_21, false)
+    assert.equal(body.credential.holderPublicKey, holder.holderPublicKey.trim())
+    // The minimized credential: same holder and enrollment, no linkable claims.
+    assert.deepEqual(body.basicCredential.claims, { age_over_18: true, citizenship: 'MX' })
+    assert.equal(body.basicCredential.holderPublicKey, body.credential.holderPublicKey)
+    assert.equal(body.basicCredential.revocationHash, body.credential.revocationHash)
+    assert.notEqual(body.basicCredential.id, body.credential.id)
     assert.match(body.credential.claims.district_hash, /^hmac-sha256:[^:]+:[0-9a-f]{64}$/)
     assert.match(body.credential.claims.curp_hash, /^hmac-sha256:[^:]+:[0-9a-f]{64}$/)
     assert.ok(body.credential.issuedAt)
@@ -162,6 +182,7 @@ describe('INE verification integration', () => {
         verification: first.verification,
         issuanceChallenge: first.issuanceChallenge,
         ageProofs: first.clientProof.ageProofs,
+        ...(await holderFields(first.issuanceChallenge)),
       },
     })
     assert.equal(replay.statusCode, 403)
@@ -186,6 +207,7 @@ describe('INE verification integration', () => {
         verification: first.verification,
         issuanceChallenge: freshChallenge,
         ageProofs: first.clientProof.ageProofs,
+        ...(await holderFields(freshChallenge)),
       },
     })
     assert.equal(duplicate.statusCode, 409)
@@ -198,6 +220,7 @@ describe('INE verification integration', () => {
       url: '/v1/sessions/me',
       headers: { authorization: `Bearer ${accessToken}` },
     })
+    const againChallenge = JSON.parse(meAgain.payload).session.issuanceChallenge
     const invalid = await app.inject({
       method: 'POST',
       url: '/v1/identity/ine/credential',
@@ -205,7 +228,8 @@ describe('INE verification integration', () => {
       payload: {
         extracted: first.extracted,
         verification: first.verification,
-        issuanceChallenge: JSON.parse(meAgain.payload).session.issuanceChallenge,
+        issuanceChallenge: againChallenge,
+        ...(await holderFields(againChallenge)),
         ageProofs: {
           over18: { proof: first.clientProof.ageProofs.over18.proof, publicSignals: tamperedSignals },
         },
@@ -214,5 +238,4 @@ describe('INE verification integration', () => {
     assert.equal(invalid.statusCode, 400)
     assert.equal(JSON.parse(invalid.payload).code, 'invalid_proof')
   })
-
 })
