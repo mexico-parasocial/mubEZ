@@ -151,6 +151,48 @@ describe('civic vote identity integration', () => {
     )
   })
 
+  it('binds a public policy ballot to its signal, author and subject', async () => {
+    const subjectUri = 'at://did:plc:example/app.bsky.feed.post/policy-1'
+    const issue = (payload: unknown) => app.inject({
+      method: 'POST', url: '/v1/identity/civic-vote-proof',
+      headers: { authorization: `Bearer ${accessToken}` }, payload,
+    })
+
+    const missing = await issue({ subjectUri, subjectType: 'policy' })
+    assert.equal(missing.statusCode, 400)
+    assert.equal(JSON.parse(missing.payload).code, 'INVALID_SIGNAL')
+    assert.notEqual((await issue({ subjectUri, subjectType: 'policy', signal: 4 })).statusCode, 200)
+
+    const issued = await issue({ subjectUri, subjectType: 'policy', signal: 2 })
+    assert.equal(issued.statusCode, 200)
+    const proof = JSON.parse(issued.payload).proof
+    assert.match(proof.eligibilityProofRef, /^m8:policy:v1:[A-Za-z0-9_-]{43}$/)
+
+    // Changing the vote keeps the person's nullifier: one person, one ballot.
+    const changed = JSON.parse((await issue({ subjectUri, subjectType: 'policy', signal: -1 })).payload).proof
+    assert.equal(changed.voteNullifier, proof.voteNullifier)
+    assert.notEqual(changed.eligibilityProofRef, proof.eligibilityProofRef)
+
+    const me = await app.inject({ method: 'GET', url: '/v1/sessions/me',
+      headers: { authorization: `Bearer ${accessToken}` } })
+    const actorDid = JSON.parse(me.payload).session.did as string
+    const claim = { actorDid, subjectUri, signal: 2,
+      voteNullifier: proof.voteNullifier, eligibilityProofRef: proof.eligibilityProofRef }
+    const verify = (payload: unknown) => app.inject({ method: 'POST',
+      url: '/v1/identity/civic-vote-proof/verify', payload })
+
+    assert.equal((await verify(claim)).statusCode, 204)
+    for (const tampered of [
+      { signal: 3 },
+      { actorDid: 'did:plc:someoneelse' },
+      { subjectUri: 'at://did:plc:example/app.bsky.feed.post/policy-2' },
+    ]) {
+      assert.equal((await verify({ ...claim, ...tampered })).statusCode, 422)
+    }
+    // A policy authorization cannot pass as a cabildeo one, or the reverse.
+    assert.notEqual((await verify({ ...claim, signal: undefined, selectedOption: 2 })).statusCode, 204)
+  })
+
   it('binds a delegation to its author, delegate, scope and direct-vote person', async () => {
     const subjectUri = 'at://did:plc:example/com.para.civic.cabildeo/delegated'
     const session = await app.inject({ method: 'GET', url: '/v1/sessions/me',
