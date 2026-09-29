@@ -147,5 +147,5 @@ The PARA gate (`WALLET_HOLDER_KEY_SUPPORTED`), the iM8 gate
 5. **Session revocation** for the lost device as part of recovery.
 6. **A retention limit** for `identity_requests` (audience and purpose
    history is kept indefinitely).
-7. **Unlinkable age proofs (v3)**, if unlinkability is a product requirement.
-   v2 cannot provide it.
+7. **Unlinkable age proofs (v3).** Required (CD-15): age checks must leave no
+   trace, and v2 cannot provide that. v2 is not released for age checks.

@@ -1,8 +1,9 @@
 # Proposal: unlinkable age proofs (`m8.identity.presentation.v3`)
 
-Status: **proposal, not built.** v2 stays the format for requests that need an
-identifier (`curp_hash`, `district_hash`), which are linkable by nature. v3
-would replace v2 for statements like "at least 18", and only those.
+Status: **required (CD-15), not built.** Age checks must leave no trace, so v3
+is the release path for statements like "at least 18". v2 stays only for
+requests whose purpose is to identify (`curp_hash`, `district_hash`), which
+are linkable by nature.
 
 ## Goal
 

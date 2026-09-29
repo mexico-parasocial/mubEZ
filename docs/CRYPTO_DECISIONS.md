@@ -836,3 +836,33 @@ the format uses.
 presentations are linkable. The unlinkable design is a proposal
 (`V3_UNLINKABLE_AGE_PROOFS.md`), not a decision.
 
+---
+
+## CD-15 — Age checks must leave no trace: unlinkable proofs are a requirement
+
+**Decision (product owner, 2026-09-28).** Proving an age threshold must not
+leave a trace. No verifier, and not mubEZ either, may learn the account or
+link one age proof to another. This is why the system uses proofs, and it is a
+release requirement, not a nice-to-have.
+
+**Consequences.**
+
+- v2 presentations (CD-13) cannot satisfy it: they carry the account DID and
+  stable identifiers (`WALLET_PRIVACY.md`). They must not be released for age
+  checks. The `basicCredential` path stays a development and interim
+  mechanism behind the closed gates.
+- The design in `V3_UNLINKABLE_AGE_PROOFS.md` moves from proposal to required
+  work: issuer-bound Merkle membership, device-held secret, request-bound
+  proof, revocation by leaf removal, and a transport that does not go
+  through the holder's session.
+- Before v3, the prerequisites that do not depend on it still apply:
+  - bind the age claim to the verified INE birth date;
+  - stop publishing `commitment` from the nullifier proof;
+  - a multi-party setup and an external audit for any new circuit.
+- v2 remains only for requests whose purpose is to identify (`curp_hash`,
+  `district_hash`). Those are linkable by nature, and each such use needs its
+  own product review.
+
+**Supersedes.** CD-13's framing of v3 as optional, and the conditional in
+`WALLET_PRIVACY.md` release blocker 7.
+
