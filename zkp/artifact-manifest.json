@@ -19,23 +19,23 @@
       "path": "out/ine_age_proof_vkey.json",
       "sha256": "2e223c0bf26b74a858903dd77a3146733fb05852be267dfdb1db434274507606"
     },
-    "nullifier_proof_wasm": {
-      "circuitId": "nullifier_proof_v1",
+    "nullifier_proof_v2_wasm": {
+      "circuitId": "nullifier_proof_v2_dev",
       "kind": "wasm",
-      "path": "out/nullifier_proof_js/nullifier_proof.wasm",
-      "sha256": "91b1de9ca6e77be879e65c0d7cbb77fabb05b88262255a66e96e628febd54515"
+      "path": "out/nullifier_proof_v2_js/nullifier_proof_v2.wasm",
+      "sha256": "129f6191a49e4949df6a558fcfc53cb1399029211b1433bf24977b1b726c26b5"
     },
-    "nullifier_proof_zkey": {
-      "circuitId": "nullifier_proof_v1",
+    "nullifier_proof_v2_zkey": {
+      "circuitId": "nullifier_proof_v2_dev",
       "kind": "zkey",
-      "path": "out/nullifier_proof_final.zkey",
-      "sha256": "4e51f0ad4da8add70403b1cccf4c5562aacbb72c819c020ef59c4149f749fe9f"
+      "path": "out/nullifier_proof_v2_final.zkey",
+      "sha256": "473504a32169c08a1888b6ceec0b776df9cf045ae9545552b563969068b335ed"
     },
-    "nullifier_proof_vkey": {
-      "circuitId": "nullifier_proof_v1",
+    "nullifier_proof_v2_vkey": {
+      "circuitId": "nullifier_proof_v2_dev",
       "kind": "vkey",
-      "path": "out/nullifier_proof_vkey.json",
-      "sha256": "ce85bcc1bb38117d77409b6d356f5680a046d617a89b0ccabd42a62594c3b70e"
+      "path": "out/nullifier_proof_v2_vkey.json",
+      "sha256": "88ac41986b48091191f60237ea60da6a188c74eaa5d04f9bd3990c33289c6430"
     }
   }
 }

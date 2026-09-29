@@ -11,10 +11,10 @@ const AGE_WASM = () => getVerifiedZkpArtifactPath('ine_age_proof_wasm')
 const AGE_ZKEY = () => getVerifiedZkpArtifactPath('ine_age_proof_zkey')
 const AGE_VKEY = () => getVerifiedZkpArtifactPath('ine_age_proof_vkey')
 
-// ─── NullifierProof artifacts ─────────────────────────────────────────────
-const NULL_WASM = () => getVerifiedZkpArtifactPath('nullifier_proof_wasm')
-const NULL_ZKEY = () => getVerifiedZkpArtifactPath('nullifier_proof_zkey')
-const NULL_VKEY = () => getVerifiedZkpArtifactPath('nullifier_proof_vkey')
+// ─── NullifierProofV2 artifacts (CD-16) ───────────────────────────────────
+const NULL_WASM = () => getVerifiedZkpArtifactPath('nullifier_proof_v2_wasm')
+const NULL_ZKEY = () => getVerifiedZkpArtifactPath('nullifier_proof_v2_zkey')
+const NULL_VKEY = () => getVerifiedZkpArtifactPath('nullifier_proof_v2_vkey')
 
 let _poseidon: Awaited<ReturnType<typeof buildPoseidon>> | null = null
 
@@ -71,12 +71,16 @@ export interface NullifierProofInput {
   communityId: number
   currentYear: number
   ageThreshold: number
+  /** Authentication path of the enrollment's leaf (see enrollmentPath). */
+  pathElements: string[]
+  pathIndices: number[]
 }
 
+/** No commitment: v2 reveals only the tree root, shared by every enrolled person. */
 export interface NullifierProofResult {
   proof: unknown
   publicSignals: string[]
-  commitment: string
+  root: string
   nullifier: string
 }
 
@@ -109,14 +113,17 @@ export async function verifyAgeProof(proof: unknown, publicSignals: string[]): P
 }
 
 /**
- * Generate a ZKP proving age eligibility + nullifier for a community.
+ * Generate a nullifier proof: enrollment-tree membership, a per-community
+ * nullifier and age eligibility, without revealing the commitment.
  * @deprecated For production, proofs must be generated client-side. Server-side proving is only for tests/demo.
  */
 export async function generateNullifierProof(input: NullifierProofInput): Promise<NullifierProofResult> {
   const { proof, publicSignals } = await groth16.fullProve(
     {
       birthYear: input.birthYear,
-      salt: input.salt,
+      salt: typeof input.salt === 'bigint' ? input.salt.toString() : input.salt,
+      pathElements: input.pathElements,
+      pathIndices: input.pathIndices,
       communityId: input.communityId,
       currentYear: input.currentYear,
       ageThreshold: input.ageThreshold,
@@ -125,14 +132,12 @@ export async function generateNullifierProof(input: NullifierProofInput): Promis
     NULL_ZKEY(),
   )
 
-  // publicSignals: [commitment, nullifier, communityId, currentYear, ageThreshold]
-  const commitment = publicSignals[0] as string
-  const nullifier = publicSignals[1] as string
-  return { proof, publicSignals, commitment, nullifier }
+  // publicSignals: [root, nullifier, communityId, currentYear, ageThreshold]
+  return { proof, publicSignals, root: publicSignals[0] as string, nullifier: publicSignals[1] as string }
 }
 
 /**
- * Verify a Groth16 nullifier proof.
+ * Verify a Groth16 nullifier proof (v2).
  */
 export async function verifyNullifierProof(proof: unknown, publicSignals: string[]): Promise<boolean> {
   const vkey = loadVkey(NULL_VKEY())

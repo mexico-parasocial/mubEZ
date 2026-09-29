@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# DEVELOPMENT ONLY. The Groth16 phase 2 below has a single contributor, who
+# could forge proofs. Production keys come from the multi-party ceremony in
+# docs/ZK_CEREMONY_PLAN.md. After regenerating, update the sha256 digests in
+# zkp/artifact-manifest.json.
+
 cd "$(dirname "$0")/.."
 
 OUTDIR="out"
@@ -9,7 +14,9 @@ SNARKJS="../node_modules/.bin/snarkjs"
 compile_circuit() {
   local name="$1"
   echo "=== Compiling ${name} ==="
-  circom "circuits/${name}.circom" --r1cs --wasm --sym -o "${OUTDIR}"
+  # --O2 removes linear constraints, which keeps nullifier_proof_v2 inside
+  # the 2^12 Powers of Tau used here.
+  circom "circuits/${name}.circom" --O2 --r1cs --wasm --sym -o "${OUTDIR}"
 }
 
 trusted_setup() {
@@ -34,6 +41,13 @@ trusted_setup() {
   "${SNARKJS}" zkey export verificationkey \
     "${OUTDIR}/${name}_final.zkey" \
     "${OUTDIR}/${name}_vkey.json"
+
+  if [ "${name}" != "ine_age_proof" ]; then
+    # nullifier_proof_v2 needs a Merkle path; tests/integration/nullifier.test.ts
+    # proves and verifies it against a real enrollment tree.
+    echo "(no smoke test for ${name}; run the nullifier integration test)"
+    return
+  fi
 
   echo "=== Smoke test for ${name} ==="
   local test_input="${OUTDIR}/${name}_test_input.json"
@@ -79,13 +93,13 @@ EOF
 
 # Compile both circuits
 compile_circuit "ine_age_proof"
-compile_circuit "nullifier_proof"
+compile_circuit "nullifier_proof_v2"
 
 # Trusted setup for both (shares the same PTAU)
 trusted_setup "ine_age_proof"
-trusted_setup "nullifier_proof"
+trusted_setup "nullifier_proof_v2"
 
 echo ""
 echo "=== ZKP setup complete ==="
-echo "  Circuits compiled: ine_age_proof, nullifier_proof"
+echo "  Circuits compiled: ine_age_proof, nullifier_proof_v2"
 echo "  Artifacts in: ${OUTDIR}/"

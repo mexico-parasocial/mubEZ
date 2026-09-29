@@ -866,3 +866,58 @@ release requirement, not a nice-to-have.
 **Supersedes.** CD-13's framing of v3 as optional, and the conditional in
 `WALLET_PRIVACY.md` release blocker 7.
 
+---
+
+## CD-16 — Nullifier proofs show enrollment-tree membership instead of publishing the commitment
+
+**Decision.** `nullifier_proof_v2` replaces v1. It proves that some active
+enrollment in the issuer's tree joins a community, once, and publishes only
+the tree root and the per-community nullifier. The `nullifiers` table keeps
+`(nullifier, community_id)` and nothing else.
+
+**Problem.** v1 output `commitment = Poseidon(birthYear, salt)`, the same value
+for every community an enrollment joined, and mubEZ matched it against
+`proof_artifacts` and stored it next to `session_id`. Two communities
+comparing proofs, or anyone with the table, could link one person's
+memberships, and the commitment led back to the INE artifact and its
+`curp_hash`. That contradicts CD-15.
+
+**What v2 does.**
+
+- **The tree.** `enrollmentTree.ts` keeps a binary Poseidon(2) Merkle tree of
+  enrollment commitments in issuance order. A leaf holds its commitment while
+  an active INE artifact carries it, and zero otherwise, so revocation and
+  expiry drop it from the next root. The circuit's `MerkleTreeInclusion`
+  (`zkp/circuits/lib/merkle.circom`) hashes identically; a unit test and the
+  integration test pin that.
+- **Root policy.** A proof's root must be current, or superseded less than
+  `ENROLLMENT_ROOT_GRACE_SEC` (1 h) ago. That bounds how long a revoked
+  enrollment can still join a community.
+- **Public tree.** `GET /identity/enrollment-tree` needs no session, and
+  clients download all of it and find their path locally. Leaves are hiding
+  commitments (248-bit salt).
+- **Checks v1 never made.** `currentYear` must be the current UTC year,
+  `ageThreshold` must be within 18–120, and `birthYear` is range-checked to
+  16 bits so the comparator cannot be satisfied by a wrapped field element.
+- **Continuity.** The nullifier formula is unchanged
+  (`Poseidon(salt, communityId)`), so existing rows still block a second join.
+  Migration 039 drops their `commitment` and `session_id`.
+
+**Not solved here.**
+
+- The endpoint is still called with the account's session, so mubEZ sees the
+  session and nullifier together while handling the request. It stores
+  neither link. A token-addressed transport is part of v3.
+- The leaf is the issuance commitment, whose birth year is a client witness
+  (THREAT_MODEL gap 8).
+- A re-enrollment with a new salt gets a new nullifier. CD-12's `person_key`
+  covers votes, not community nullifiers.
+- The proving key comes from a single-party development setup. Production
+  needs the ceremony in `ZK_CEREMONY_PLAN.md`, after the audit in
+  `ZK_AUDIT_RFP.md`.
+
+**Depth.** 14 (16,384 enrollments) in development, which fits the 2^12 Powers
+of Tau used locally. Production depth is fixed at the ceremony.
+
+**Supersedes.** THREAT_MODEL gap 9 (nullifier proofs publish the commitment).
+
