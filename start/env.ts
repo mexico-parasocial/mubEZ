@@ -9,7 +9,9 @@ import type { ValidateFn } from '@poppinss/validator-lite/types'
  */
 function zodEnv<T extends z.ZodTypeAny>(schema: T): ValidateFn<z.infer<T>> {
   return (key: string, value?: string) => {
-    const result = schema.safeParse(value)
+    // A blank line like `FOO=` (as shipped in .env.example) means "unset", so
+    // `.optional()` and `.default()` apply instead of validating ''.
+    const result = schema.safeParse(value === '' ? undefined : value)
     if (!result.success) {
       const messages = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
       throw new Error(`Invalid environment variable "${key}": ${messages}`)
