@@ -82,6 +82,18 @@ describe('PARA OAuth exchange and device logout (seeded completed OAuth fixtures
     const result = await app.inject({ method: 'POST', url: '/v1/sessions/exchange', payload: { code: valid.code } })
     assert.equal(result.statusCode, 200)
   })
+  it('retains the code verifier binding even after its audit attempt is removed', async () => {
+    const valid = grant()
+    getDb().prepare('DELETE FROM oauth_login_attempts WHERE id = ?').run(valid.attemptId)
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/v1/sessions/exchange',
+      payload: { code: valid.code, attemptId: valid.attemptId },
+    })
+    assert.equal(denied.statusCode, 400)
+    const allowed = await app.inject({ method: 'POST', url: '/v1/sessions/exchange', payload: valid })
+    assert.equal(allowed.statusCode, 200)
+  })
   it('returns provider failure to the configured web callback without provider details or tokens', async () => {
     const attempt = createAttempt({
       identifier: 'did:plc:alice',

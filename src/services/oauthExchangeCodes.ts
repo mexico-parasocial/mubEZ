@@ -36,16 +36,27 @@ export function createExchangeCode(input: { attemptId: string; sessionId: string
   const code = `m8ex-${randomBytes(32).toString('base64url')}`
   const createdAt = nowIso()
   const expiresAt = new Date(Date.now() + EXCHANGE_CODE_TTL_MS).toISOString()
+  const attempt = getDb()
+    .prepare('SELECT exchange_challenge FROM oauth_login_attempts WHERE id = ?')
+    .get(input.attemptId) as { exchange_challenge: string | null } | undefined
 
   getDb()
     .prepare(
       `
       INSERT INTO oauth_exchange_codes
-        (id, code_hash, attempt_id, session_id, created_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+        (id, code_hash, attempt_id, session_id, exchange_challenge, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     )
-    .run(`oauth-exchange-${randomUUID()}`, hashCode(code), input.attemptId, input.sessionId, createdAt, expiresAt)
+    .run(
+      `oauth-exchange-${randomUUID()}`,
+      hashCode(code),
+      input.attemptId,
+      input.sessionId,
+      attempt?.exchange_challenge ?? null,
+      createdAt,
+      expiresAt,
+    )
 
   return { code, expiresAt }
 }
@@ -61,11 +72,7 @@ export function consumeExchangeCode(code: string, expectedAttemptId?: string, ve
 
   db.prepare('DELETE FROM oauth_exchange_codes WHERE expires_at < ?').run(now)
 
-  const row = db
-    .prepare(
-      'SELECT codes.*, attempts.exchange_challenge FROM oauth_exchange_codes codes LEFT JOIN oauth_login_attempts attempts ON attempts.id = codes.attempt_id WHERE codes.code_hash = ?',
-    )
-    .get(hashCode(code)) as
+  const row = db.prepare('SELECT * FROM oauth_exchange_codes WHERE code_hash = ?').get(hashCode(code)) as
     | {
         id: string
         attempt_id: string

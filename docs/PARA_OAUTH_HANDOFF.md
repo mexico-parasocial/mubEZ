@@ -7,9 +7,10 @@ login or a deployed client.
 
 ## Deploy the broker before the new PARA client
 
-1. Back up the broker database and apply migration
-   `040_oauth_exchange_binding.sql` using the normal migration runner. It adds
-   an optional column; retain it when rolling the application back.
+1. Back up the broker database and apply migrations
+   `040_oauth_exchange_binding.sql` and `041_oauth_code_binding_retention.sql`
+   using the normal migration runner. They add
+   optional challenge columns; retain them when rolling the application back.
 2. Set `SERVICE_URL` to the broker's public HTTPS origin. Its
    `/oauth-client-metadata.json` and `/v1/sessions/oauth/callback` must be
    reachable by the actual PDS. Keep the existing production issuer/secret
@@ -43,6 +44,9 @@ A requested DID must match the provider's authenticated DID.
 
 PARA posts the code, `attemptId` and its private `verifier` to
 `/v1/sessions/exchange`. Attempt/verifier mismatches do not consume the code.
+The code retains its verifier binding if its OAuth audit row is later removed.
+Migration 041 backfills outstanding bindings and invalidates orphan codes whose
+binding cannot be recovered; those clients must reconnect.
 The response includes `authenticated`, `attemptId`, `sessionId`, `session` and
 a complete token bundle. Codes expire after two minutes; attempts after ten.
 Legacy clients without a challenge retain their existing code-only exchange.
