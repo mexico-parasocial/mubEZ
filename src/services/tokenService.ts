@@ -40,10 +40,14 @@ export function assertCanIssueTokens(sessionId: string) {
 }
 
 function writeLedger(sessionId: string, action: string, targetType: string, targetId: string, detail: unknown) {
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO ledger (session_id, action, target_type, target_id, detail_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(sessionId, action, targetType, targetId, JSON.stringify(detail ?? {}), nowIso())
+  `,
+    )
+    .run(sessionId, action, targetType, targetId, JSON.stringify(detail ?? {}), nowIso())
 }
 
 export function signAccessToken(sessionId: string) {
@@ -98,9 +102,8 @@ export async function issueTokenBundle(sessionId: string, detail: Record<string,
 export async function rotateRefreshToken(refreshToken: string) {
   const tokenHash = hashRefreshToken(refreshToken)
   const db = getDb()
-  const row = db
-    .prepare('SELECT * FROM refresh_tokens WHERE token_hash = ?')
-    .get(tokenHash) as Record<string, unknown> | undefined
+  const row = db.prepare('SELECT * FROM refresh_tokens WHERE token_hash = ?').get(tokenHash) as
+    Record<string, unknown> | undefined
 
   if (!row) {
     throw new TokenIssueError('Invalid refresh token', 'INVALID_REFRESH_TOKEN')
@@ -116,8 +119,10 @@ export async function rotateRefreshToken(refreshToken: string) {
   }
 
   if (new Date(row.expires_at as string).getTime() <= Date.now()) {
-    db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL')
-      .run(nowIso(), tokenHash)
+    db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL').run(
+      nowIso(),
+      tokenHash,
+    )
     throw new TokenIssueError('Invalid refresh token', 'REFRESH_TOKEN_EXPIRED')
   }
 
@@ -130,15 +135,26 @@ export async function rotateRefreshToken(refreshToken: string) {
   const rotatedAt = nowIso()
 
   db.transaction(() => {
-    db.prepare('INSERT INTO refresh_tokens (token_hash, session_id, expires_at) VALUES (?, ?, ?)')
-      .run(nextTokenHash, sessionId, nextExpiresAt)
-    db.prepare(`
+    assertCanIssueTokens(sessionId)
+    const changed = db
+      .prepare(
+        `
       UPDATE refresh_tokens
       SET revoked_at = ?,
           rotated_at = ?,
           replaced_by_token_hash = ?
       WHERE token_hash = ? AND revoked_at IS NULL
-    `).run(rotatedAt, rotatedAt, nextTokenHash, tokenHash)
+    `,
+      )
+      .run(rotatedAt, rotatedAt, nextTokenHash, tokenHash)
+    if (changed.changes !== 1) {
+      throw new TokenIssueError('Invalid refresh token', 'REFRESH_TOKEN_REUSED')
+    }
+    db.prepare('INSERT INTO refresh_tokens (token_hash, session_id, expires_at) VALUES (?, ?, ?)').run(
+      nextTokenHash,
+      sessionId,
+      nextExpiresAt,
+    )
   })()
 
   writeLedger(sessionId, 'RefreshTokenRotated', 'refresh_token', tokenHash, {
@@ -158,4 +174,24 @@ export function revokeSessionRefreshTokens(sessionId: string, reason = 'logout')
     .prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL')
     .run(nowIso(), sessionId)
   writeLedger(sessionId, 'SessionRefreshTokensRevoked', 'session', sessionId, { reason })
+}
+
+/** Logout revokes this refresh credential without affecting another device. */
+export function revokeRefreshToken(refreshToken: string, sessionId: string): void {
+  const db = getDb()
+  db.transaction(() => {
+    let hash: string | null = hashRefreshToken(refreshToken)
+    const seen = new Set<string>()
+    while (hash && !seen.has(hash)) {
+      seen.add(hash)
+      const row = db
+        .prepare('SELECT replaced_by_token_hash FROM refresh_tokens WHERE token_hash = ? AND session_id = ?')
+        .get(hash, sessionId) as { replaced_by_token_hash: string | null } | undefined
+      if (!row) break
+      db.prepare(
+        'UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND session_id = ? AND revoked_at IS NULL',
+      ).run(nowIso(), hash, sessionId)
+      hash = row.replaced_by_token_hash
+    }
+  })()
 }

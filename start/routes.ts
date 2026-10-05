@@ -47,6 +47,7 @@ router
     // Protected routes
     router
       .group(() => {
+        router.post('/sessions/logout', '#controllers/sessions_controller.logout')
         router.get('/sessions/me', '#controllers/sessions_controller.me')
         router.post('/sessions/anonymous/enable', '#controllers/sessions_controller.enableAnonymous')
         router.post('/sessions/anonymous/disable', '#controllers/sessions_controller.disableAnonymous')
