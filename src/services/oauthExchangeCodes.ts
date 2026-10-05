@@ -29,20 +29,22 @@ function nowIso() {
  * Only the SHA-256 hash is stored — the plaintext code exists solely in the
  * deep-link redirect URL handed to the native app.
  */
-export function createExchangeCode(input: {
-  attemptId: string
-  sessionId: string
-}): { code: string; expiresAt: string } {
+export function createExchangeCode(input: { attemptId: string; sessionId: string }): {
+  code: string
+  expiresAt: string
+} {
   const code = `m8ex-${randomBytes(32).toString('base64url')}`
   const createdAt = nowIso()
   const expiresAt = new Date(Date.now() + EXCHANGE_CODE_TTL_MS).toISOString()
 
   getDb()
-    .prepare(`
+    .prepare(
+      `
       INSERT INTO oauth_exchange_codes
         (id, code_hash, attempt_id, session_id, created_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?)
-    `)
+    `,
+    )
     .run(`oauth-exchange-${randomUUID()}`, hashCode(code), input.attemptId, input.sessionId, createdAt, expiresAt)
 
   return { code, expiresAt }
@@ -53,19 +55,28 @@ export function createExchangeCode(input: {
  * a replayed code lose the race deterministically, mirroring the token
  * rotation guarantee in tokenService.
  */
-export function consumeExchangeCode(code: string): ConsumedExchangeCode {
+export function consumeExchangeCode(code: string, expectedAttemptId?: string, verifier?: string): ConsumedExchangeCode {
   const db = getDb()
   const now = nowIso()
 
   db.prepare('DELETE FROM oauth_exchange_codes WHERE expires_at < ?').run(now)
 
   const row = db
-    .prepare('SELECT * FROM oauth_exchange_codes WHERE code_hash = ?')
+    .prepare(
+      'SELECT codes.*, attempts.exchange_challenge FROM oauth_exchange_codes codes LEFT JOIN oauth_login_attempts attempts ON attempts.id = codes.attempt_id WHERE codes.code_hash = ?',
+    )
     .get(hashCode(code)) as
-    | { id: string; attempt_id: string; session_id: string; expires_at: string; used_at: string | null }
+    | {
+        id: string
+        attempt_id: string
+        session_id: string
+        expires_at: string
+        used_at: string | null
+        exchange_challenge: string | null
+      }
     | undefined
 
-  if (!row) {
+  if (!row || (expectedAttemptId && row.attempt_id !== expectedAttemptId)) {
     // Unknown, already-consumed (row pruned later), or forged codes are
     // indistinguishable by design.
     throw new ExchangeCodeError('invalid')
@@ -73,6 +84,13 @@ export function consumeExchangeCode(code: string): ConsumedExchangeCode {
   if (row.expires_at < now) {
     throw new ExchangeCodeError('expired')
   }
+  if (
+    row.exchange_challenge &&
+    (!verifier ||
+      !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) ||
+      createHash('sha256').update(verifier).digest('base64url') !== row.exchange_challenge)
+  )
+    throw new ExchangeCodeError('invalid')
 
   const consumed = db
     .prepare('UPDATE oauth_exchange_codes SET used_at = ? WHERE id = ? AND used_at IS NULL')

@@ -5,6 +5,7 @@ type InjectOptions = {
   url: string
   headers?: Record<string, string>
   payload?: unknown
+  redirect?: 'error' | 'follow' | 'manual'
 }
 
 export type AdonisTestApp = {
@@ -61,6 +62,7 @@ export async function buildApp(): Promise<AdonisTestApp> {
         method: options.method,
         headers,
         body,
+        redirect: options.redirect,
       })
 
       return {

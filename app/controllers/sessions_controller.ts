@@ -4,19 +4,21 @@ import env from '#start/env'
 import { getDb } from '../../src/db/connection.js'
 import { Features, assertDemoPathAllowed, isFeatureEnabled } from '../../src/services/features.js'
 import { completeOAuthCallback, initiateOAuthLogin, OAuthInitiateError } from '../../src/services/atprotoAuth.js'
-import {
-  ExchangeCodeError,
-  consumeExchangeCode,
-  createExchangeCode,
-} from '../../src/services/oauthExchangeCodes.js'
+import { ExchangeCodeError, consumeExchangeCode, createExchangeCode } from '../../src/services/oauthExchangeCodes.js'
 import {
   completeOAuthLoginAttempt,
   createOAuthLoginAttempt,
   failOAuthLoginAttempt,
   getPendingOAuthLoginAttempt,
 } from '../../src/services/oauthLoginAttempts.js'
+import { oauthHandoffUrl, resolveOAuthHandoff } from '../../src/services/oauthHandoff.js'
 import { createSession, hydrateSession } from '../../src/services/sessionService.js'
-import { issueTokenBundle, rotateRefreshToken, TokenIssueError } from '../../src/services/tokenService.js'
+import {
+  issueTokenBundle,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  TokenIssueError,
+} from '../../src/services/tokenService.js'
 import {
   createAnonymousProfile,
   deleteAnonymousProfile,
@@ -31,28 +33,20 @@ const startSessionSchema = z.object({
   surface: z.enum(['public', 'civic', 'dating']).optional(),
   platform: z.enum(['web', 'mobile']).optional(),
   returnTo: z.string().min(1).max(256).optional(),
+  exchangeChallenge: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{43}$/)
+    .optional(),
 })
 
 const exchangeCodeSchema = z.object({
   code: z.string().min(16).max(256),
+  attemptId: z.string().min(1).max(256).optional(),
+  verifier: z
+    .string()
+    .regex(/^[A-Za-z0-9._~-]{43,128}$/)
+    .optional(),
 })
-
-/**
- * Native apps sign in via the system browser and come back through a
- * deep-link redirect. Only URLs on this allowlist may be used as the return
- * target — anything else is dropped so a caller can't phish tokens into a
- * scheme it controls. Configure with OAUTH_RETURN_TO_ALLOWLIST (comma-separated).
- */
-function resolveReturnTo(requested: string | undefined): string | null {
-  const allowlist = env.get('OAUTH_RETURN_TO_ALLOWLIST')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-  if (requested) {
-    return allowlist.includes(requested) ? requested : null
-  }
-  return allowlist[0] ?? null
-}
 
 export default class SessionsController {
   async start(ctx: HttpContext) {
@@ -87,6 +81,26 @@ export default class SessionsController {
 
     const requestedScope = scopeForSurface(body.surface)
     const devTokenBootstrap = assertDemoPathAllowed(Features.AuthDevTokenBootstrap)
+
+    let returnTo: string | null = null
+    if (!devTokenBootstrap) {
+      try {
+        returnTo = resolveOAuthHandoff(
+          body.platform,
+          body.returnTo,
+          isFeatureEnabled(Features.OAuthMobileHandoff),
+          env.get('OAUTH_RETURN_TO_ALLOWLIST'),
+        )
+      } catch (error) {
+        const code =
+          error instanceof Error && error.message === 'OAUTH_HANDOFF_UNAVAILABLE'
+            ? error.message
+            : 'OAUTH_RETURN_TO_INVALID'
+        return ctx.response
+          .status(code === 'OAUTH_HANDOFF_UNAVAILABLE' ? 403 : 422)
+          .send({ error: 'OAuth return path is not available for this client', code })
+      }
+    }
 
     // ─── Initiate OAuth ────────────────────────────────────────────────────
     let oauth: { url: string; state: string } | null = null
@@ -130,15 +144,15 @@ export default class SessionsController {
         state: oauthLogin.state,
         oauthUrl: oauthLogin.url,
         scope: requestedScope,
-        returnTo:
-          body.platform === 'mobile' && isFeatureEnabled(Features.OAuthMobileHandoff)
-            ? resolveReturnTo(body.returnTo)
-            : null,
+        returnTo,
+        exchangeChallenge: body.exchangeChallenge,
       })
 
       return ctx.response.status(202).send({
         attempt: {
           attemptId: attempt.id,
+          returnTo: attempt.returnTo,
+          exchangeChallenge: attempt.exchangeChallenge,
           identifier: attempt.identifier,
           authUrl: attempt.oauthUrl,
           phaseLabel: 'Awaiting OAuth callback',
@@ -165,6 +179,7 @@ export default class SessionsController {
 
   async oauthCallback(ctx: HttpContext) {
     let attemptId: string | null = null
+    let returnTo: string | null = null
     try {
       const params = new URLSearchParams(ctx.request.request.url?.split('?')[1] ?? '')
       const state = params.get('state')
@@ -174,11 +189,16 @@ export default class SessionsController {
 
       const attempt = getPendingOAuthLoginAttempt(state)
       if (!attempt) {
-        return ctx.response.status(400).send({ error: 'OAuth login attempt not found or expired', code: 'OAUTH_ATTEMPT_INVALID' })
+        return ctx.response
+          .status(400)
+          .send({ error: 'OAuth login attempt not found or expired', code: 'OAUTH_ATTEMPT_INVALID' })
       }
       attemptId = attempt.id
+      returnTo = attempt.returnTo
 
       const result = await completeOAuthCallback(params)
+      if (attempt.identifier.startsWith('did:') && attempt.identifier !== result.did)
+        throw new Error('OAuth account did not match requested DID')
       let sessionRow = getDb()
         .prepare("SELECT session_id FROM sessions WHERE did = ? AND status = 'active'")
         .get(result.did) as { session_id: string } | undefined
@@ -203,15 +223,17 @@ export default class SessionsController {
       // Native-app handoff: never put bearer tokens in a URL or a page the
       // system browser rendered. Hand the app a single-use exchange code and
       // let it swap the code for a token bundle over the app's own channel.
-      if (attempt.returnTo && isFeatureEnabled(Features.OAuthMobileHandoff)) {
+      if (attempt.returnTo) {
+        if (!isFeatureEnabled(Features.OAuthMobileHandoff)) throw new Error('OAuth handoff disabled')
         const exchange = createExchangeCode({
           attemptId: attempt.id,
           sessionId: sessionRow.session_id,
         })
-        const separator = attempt.returnTo.includes('?') ? '&' : '?'
-        return ctx.response.status(302).redirect(
-          `${attempt.returnTo}${separator}exchange_code=${encodeURIComponent(exchange.code)}`
-        )
+        return ctx.response
+          .redirect()
+          .status(302)
+          .withQs(false)
+          .toPath(oauthHandoffUrl(attempt.returnTo, attempt.id, { code: exchange.code }))
       }
 
       return ctx.response.send({
@@ -227,6 +249,13 @@ export default class SessionsController {
     } catch (error) {
       if (attemptId) {
         failOAuthLoginAttempt(attemptId, 'OAUTH_CALLBACK_FAILED')
+      }
+      if (returnTo && attemptId) {
+        return ctx.response
+          .redirect()
+          .status(302)
+          .withQs(false)
+          .toPath(oauthHandoffUrl(returnTo, attemptId, { error: 'OAUTH_CALLBACK_FAILED' }))
       }
       const message = error instanceof Error ? error.message : 'OAuth callback failed'
       return ctx.response.status(400).send({ error: message, code: 'OAUTH_CALLBACK_FAILED' })
@@ -244,7 +273,7 @@ export default class SessionsController {
 
     let consumed: ReturnType<typeof consumeExchangeCode>
     try {
-      consumed = consumeExchangeCode(body.code)
+      consumed = consumeExchangeCode(body.code, body.attemptId, body.verifier)
     } catch (error) {
       if (error instanceof ExchangeCodeError) {
         const status = error.kind === 'reused' ? 403 : 400
@@ -260,6 +289,7 @@ export default class SessionsController {
     try {
       return ctx.response.send({
         authenticated: true,
+        attemptId: consumed.attemptId,
         sessionId: consumed.sessionId,
         session: hydrateSession(consumed.sessionId),
         tokens: await issueTokenBundle(consumed.sessionId, {
@@ -276,6 +306,13 @@ export default class SessionsController {
       }
       throw error
     }
+  }
+
+  async logout(ctx: HttpContext) {
+    const body = validateBody(ctx, z.object({ refreshToken: z.string().min(1).max(256) }))
+    if (!body) return
+    revokeRefreshToken(body.refreshToken, getSessionId(ctx))
+    return ctx.response.send({ revoked: true })
   }
 
   async me(ctx: HttpContext) {
