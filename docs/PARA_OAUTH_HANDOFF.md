@@ -61,6 +61,33 @@ logout clears the client but cannot confirm server revocation.
 
 ## Supported-client acceptance still required
 
+### Read-only deployment preflight
+
+From the broker repository, run with the actual broker environment/database:
+
+```sh
+pnpm login:preflight --web-origin https://ACTUAL_PARA_ORIGIN
+# In the current broker Docker image:
+node build/bin/para_login_preflight.js --web-origin https://ACTUAL_PARA_ORIGIN
+```
+
+The platform wrapper provides `make login-preflight WEB_ORIGIN=https://ACTUAL_PARA_ORIGIN`.
+The command inspects effective handoff/bootstrap flags, exact native/web
+callbacks, explicit CORS and recorded migrations plus actual binding columns.
+It opens only an existing database read-only, and probes public health,
+OAuth metadata, CORS OPTIONS and the web `/m8-auth` route. It does not initialize
+the app, create sessions, issue credentials or apply migrations. Output omits
+secrets and remote response bodies; failed checks return a nonzero exit code.
+
+`--local` permits loopback HTTP, not a LAN hostname over HTTP. `--config-only`
+omits endpoint probes and records that narrower scope. A passed check covers
+this invocation's environment/database and the selected public responses;
+it cannot attest a running process's flags/code revision or prove provider and
+client behavior. Record deployment revisions separately. Run the command inside
+the deployed broker container to avoid inspecting a different local database.
+
+### Provider and device results
+
 Exercise a real provider login with bootstrap off on iOS, Android and the
 selected web host, including browser cancellation/back, expiry/replay, wrong
 account, account switching, refresh and logout. Native release credentials use

@@ -13,6 +13,7 @@
     "test:integration": "NODE_ENV=test tsx --test --test-force-exit tests/integration/**/*.test.ts",
     "test:e2e": "NODE_ENV=test tsx --test tests/e2e/**/*.test.ts",
     "db:migrate": "tsx src/db/migrate.ts",
+    "login:preflight": "tsx bin/para_login_preflight.ts",
     "keys:generate": "tsx scripts/generate-issuer-key.ts",
     "mubez:deploy": "pnpm build && node build/src/db/migrate.js",
     "ace": "node ace",
