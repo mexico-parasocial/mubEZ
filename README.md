@@ -61,6 +61,23 @@ docker compose up --build
 
 The container stores local SQLite data in the `mubez-data` Docker volume.
 
+The production image (published to `ghcr.io/mexico-parasocial/mubez` by
+`.github/workflows/image.yml`) adds two things, both off unless configured:
+
+- **Secrets as files.** `NAME_FILE=/run/secrets/...` becomes `NAME` before the
+  server starts (`docker/env-from-files.sh`). It refuses to start if both are
+  set or the file is empty.
+- **The bucket as the source of truth.** With `LITESTREAM_BUCKET` set
+  (`LITESTREAM_PATH`, `LITESTREAM_ENDPOINT`, `LITESTREAM_REGION`,
+  `LITESTREAM_FORCE_PATH_STYLE`, credentials in
+  `LITESTREAM_ACCESS_KEY_ID[_FILE]`/`LITESTREAM_SECRET_ACCESS_KEY[_FILE]`),
+  Litestream streams every change of the database to S3 within
+  `LITESTREAM_SYNC_INTERVAL` (default 1 s), and a container that starts with
+  no database restores it from there (`docker/entrypoint.sh`). The disk is
+  then only a cache. Never run two brokers against the same bucket path.
+
+para-platform runs it this way (`overrides/identity.yaml` there).
+
 ## Repository Boundary
 
 Do not commit local databases, `.env` files, build output, generated proving keys, generated Adonis artifacts, or frontend app code.

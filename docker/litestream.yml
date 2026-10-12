@@ -1,0 +1,19 @@
+# Litestream: continuous replication of the broker's SQLite to the bucket.
+# Used only when LITESTREAM_BUCKET is set (see docker/entrypoint.sh). The
+# credentials come from LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY,
+# which Litestream reads from the environment on its own.
+dbs:
+  - path: ${DATABASE_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: ${LITESTREAM_PATH}
+        # Empty for AWS S3; the account endpoint for R2, GCS or MinIO.
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        force-path-style: ${LITESTREAM_FORCE_PATH_STYLE}
+        # Every change reaches the bucket within this window. It bounds what a
+        # crash can lose; the request bill grows with how often it syncs.
+        sync-interval: ${LITESTREAM_SYNC_INTERVAL}
+        snapshot-interval: 24h
+        retention: 72h

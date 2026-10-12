@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mubez:
     build: .
@@ -26,7 +24,9 @@ services:
     volumes:
       - mubez-data:/app/data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8787/v1/health"]
+      # 127.0.0.1, not localhost: in this image localhost resolves to ::1 and
+      # the server listens on IPv4 only, so the check would never pass.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 3
