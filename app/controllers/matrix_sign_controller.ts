@@ -8,16 +8,24 @@ import {
   listPendingMatrixSignRequests,
 } from '../../src/services/matrixSignService.js'
 
-const createSchema = z.object({
-  challenge: z.string().regex(/^[0-9a-f]{64}$/, 'challenge must be 64 hex chars'),
-  // Only bridge audiences are signable through this relay.
-  audience: z.enum([
-    'para-matrix-bridge/identity.v1',
-    'para-matrix-bridge/session.v1',
-    'para-matrix-bridge/attest.v1',
-    'para-matrix-bridge/join.v1',
-  ]),
-})
+const createSchema = z
+  .object({
+    challenge: z.string(),
+    audience: z.enum([
+      'para-matrix-bridge/identity.v1',
+      'para-matrix-bridge/session.v1',
+      'para-matrix-bridge/attest.v1',
+      'para-matrix-bridge/join.v1',
+      'para-idp',
+    ]),
+  })
+  .refine(
+    (input) =>
+      input.audience === 'para-idp'
+        ? /^[A-Za-z0-9_-]{43}$/.test(input.challenge)
+        : /^[0-9a-f]{64}$/.test(input.challenge),
+    { message: 'Invalid Matrix challenge', path: ['challenge'] },
+  )
 
 const fulfillSchema = z.object({
   assertion: z.object({
@@ -40,9 +48,7 @@ export default class MatrixSignController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, createSchema)
     if (!body) return
-    return ctx.response.status(201).send(
-      createMatrixSignRequest(sessionId, body),
-    )
+    return ctx.response.status(201).send(createMatrixSignRequest(sessionId, body))
   }
 
   /** Pending list for the wallet's approval surface. */
@@ -58,7 +64,9 @@ export default class MatrixSignController {
     const sessionId = getSessionId(ctx)
     const request = getMatrixSignRequest(sessionId, ctx.params.id)
     if (!request) {
-      return ctx.response.notFound({ error: 'Sign request not found or expired' })
+      return ctx.response.notFound({
+        error: 'Sign request not found or expired',
+      })
     }
     return ctx.response.send(request)
   }

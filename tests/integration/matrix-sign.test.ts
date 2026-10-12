@@ -71,7 +71,10 @@ describe('matrix sign-request relay (HTTP)', () => {
     })
     assert.equal(store.statusCode, 401)
 
-    const index = await app.inject({ method: 'GET', url: '/v1/matrix/sign-requests' })
+    const index = await app.inject({
+      method: 'GET',
+      url: '/v1/matrix/sign-requests',
+    })
     assert.equal(index.statusCode, 401)
 
     const fulfill = await app.inject({
@@ -95,7 +98,10 @@ describe('matrix sign-request relay (HTTP)', () => {
       method: 'POST',
       url: '/v1/matrix/sign-requests',
       headers: { authorization: `Bearer ${para}` },
-      payload: { challenge: CHALLENGE, audience: 'para-matrix-bridge/unknown.v1' },
+      payload: {
+        challenge: CHALLENGE,
+        audience: 'para-matrix-bridge/unknown.v1',
+      },
     })
     assert.equal(unknownAudience.statusCode, 422)
 
@@ -103,9 +109,45 @@ describe('matrix sign-request relay (HTTP)', () => {
       method: 'POST',
       url: '/v1/matrix/sign-requests/some-id/fulfill',
       headers: { authorization: `Bearer ${para}` },
-      payload: { ...signedFor(CHALLENGE, AUDIENCE), signature: 'ff'.repeat(63) },
+      payload: {
+        ...signedFor(CHALLENGE, AUDIENCE),
+        signature: 'ff'.repeat(63),
+      },
     })
     assert.equal(badSignatureLength.statusCode, 422)
+  })
+
+  it('relays IdP base64url challenges without accepting bridge hex under that audience', async () => {
+    const challenge = 'a'.repeat(43)
+    const headers = { authorization: `Bearer ${para}` }
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/matrix/sign-requests',
+      headers,
+      payload: { challenge, audience: 'para-idp' },
+    })
+    assert.equal(created.statusCode, 201)
+    const request = JSON.parse(created.payload)
+    const fulfilled = await app.inject({
+      method: 'POST',
+      url: `/v1/matrix/sign-requests/${request.id}/fulfill`,
+      headers,
+      payload: signedFor(challenge, 'para-idp'),
+    })
+    assert.equal(fulfilled.statusCode, 200)
+    const polled = await app.inject({
+      method: 'GET',
+      url: `/v1/matrix/sign-requests/${request.id}`,
+      headers,
+    })
+    assert.equal(JSON.parse(polled.payload).assertion.assertion.audience, 'para-idp')
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/v1/matrix/sign-requests',
+      headers,
+      payload: { challenge: CHALLENGE, audience: 'para-idp' },
+    })
+    assert.equal(invalid.statusCode, 422)
   })
 
   it('carries a deposited challenge to the wallet and back to PARA', async () => {
@@ -131,9 +173,7 @@ describe('matrix sign-request relay (HTTP)', () => {
       headers: { authorization: `Bearer ${para}` },
     })
     assert.equal(listed.statusCode, 200)
-    assert.ok(
-      JSON.parse(listed.payload).requests.some((r: { id: string }) => r.id === request.id),
-    )
+    assert.ok(JSON.parse(listed.payload).requests.some((r: { id: string }) => r.id === request.id))
 
     const poll = await app.inject({
       method: 'GET',
@@ -204,7 +244,9 @@ describe('matrix sign-request relay (HTTP)', () => {
       method: 'POST',
       url: `/v1/matrix/sign-requests/${request.id}/fulfill`,
       headers: { authorization: `Bearer ${para}` },
-      payload: signedFor('cd'.repeat(32), AUDIENCE, { identityPub: '00'.repeat(32) }),
+      payload: signedFor('cd'.repeat(32), AUDIENCE, {
+        identityPub: '00'.repeat(32),
+      }),
     })
     assert.equal(forged.statusCode, 400)
 
