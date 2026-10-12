@@ -16,6 +16,8 @@ const createSchema = z.object({
     'para-matrix-bridge/session.v1',
     'para-matrix-bridge/attest.v1',
     'para-matrix-bridge/join.v1',
+    // Sharing the caller's MXID with one recipient for a direct message.
+    'para-matrix-bridge/dm.v1',
   ]),
 })
 
