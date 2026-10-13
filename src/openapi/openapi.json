@@ -5556,7 +5556,8 @@
                       "para-matrix-bridge/identity.v1",
                       "para-matrix-bridge/session.v1",
                       "para-matrix-bridge/attest.v1",
-                      "para-matrix-bridge/join.v1"
+                      "para-matrix-bridge/join.v1",
+                      "para-matrix-bridge/dm.v1"
                     ]
                   }
                 }

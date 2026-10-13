@@ -99,6 +99,15 @@ describe('matrix sign-request relay (HTTP)', () => {
     })
     assert.equal(unknownAudience.statusCode, 422)
 
+    // The DM consent audience (bridge /api/dm-requests) is signable.
+    const dmAudience = await app.inject({
+      method: 'POST',
+      url: '/v1/matrix/sign-requests',
+      headers: { authorization: `Bearer ${para}` },
+      payload: { challenge: CHALLENGE, audience: 'para-matrix-bridge/dm.v1' },
+    })
+    assert.equal(dmAudience.statusCode, 201)
+
     const badSignatureLength = await app.inject({
       method: 'POST',
       url: '/v1/matrix/sign-requests/some-id/fulfill',
