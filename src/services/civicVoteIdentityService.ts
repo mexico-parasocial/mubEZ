@@ -50,6 +50,7 @@ export function issueCivicVoteProof(
     subjectUri: string
     subjectType: CivicVoteSubjectType
     selectedOption?: number
+    signal?: number
   },
 ): CivicVoteProof {
   const subjectUri = input.subjectUri.trim()
@@ -64,6 +65,13 @@ export function issueCivicVoteProof(
   if (subjectType === 'cabildeo') {
     if (!Number.isSafeInteger(input.selectedOption) || input.selectedOption! < 0) {
       throw appError('selectedOption is required for a cabildeo proof', 400, 'INVALID_OPTION')
+    }
+    proofSecret()
+  }
+
+  if (subjectType === 'policy') {
+    if (!isPolicySignal(input.signal)) {
+      throw appError('signal (-3..+3) is required for a policy proof', 400, 'INVALID_SIGNAL')
     }
     proofSecret()
   }
@@ -133,7 +141,14 @@ export function issueCivicVoteProof(
         selectedOption: input.selectedOption!,
         voteNullifier,
       }, proofRef)
-    : proofRef
+    : subjectType === 'policy'
+      ? policyProofMac({
+          actorDid: getSessionIdentity(sessionId).did,
+          subjectUri,
+          signal: input.signal!,
+          voteNullifier,
+        }, proofRef)
+      : proofRef
 
   return {
     subjectUri,
@@ -166,6 +181,49 @@ export function verifyCabildeoVoteProof(
   const expected = Buffer.from(cabildeoProofMac(input, row.proof_ref))
   const supplied = Buffer.from(input.eligibilityProofRef)
   return expected.length === supplied.length && timingSafeEqual(expected, supplied)
+}
+
+export interface PolicyProofClaim {
+  actorDid: string
+  subjectUri: string
+  signal: number
+  voteNullifier: string
+}
+
+/**
+ * Verifies a public policy ballot: the -3..+3 signal is bound by the MAC, so a
+ * record rewritten to another signal no longer verifies. Exposes no person or
+ * session ID.
+ */
+export function verifyPolicyVoteProof(
+  input: PolicyProofClaim & { eligibilityProofRef: string },
+): boolean {
+  proofSecret()
+  if (!isPolicySignal(input.signal)) return false
+  const row = getDb().prepare(`
+    SELECT n.proof_ref FROM civic_vote_nullifiers n
+    JOIN person_roots p ON p.id = n.person_id
+    WHERE n.vote_nullifier = ? AND n.subject_type = 'policy'
+      AND n.subject_uri = ? AND p.status = 'active'
+  `).get(input.voteNullifier, input.subjectUri) as { proof_ref: string } | undefined
+  if (!row) return false
+  const expected = Buffer.from(policyProofMac(input, row.proof_ref))
+  const supplied = Buffer.from(input.eligibilityProofRef)
+  return expected.length === supplied.length && timingSafeEqual(expected, supplied)
+}
+
+function isPolicySignal(signal: unknown): signal is number {
+  return Number.isInteger(signal) && (signal as number) >= -3 && (signal as number) <= 3
+}
+
+function policyProofMac(input: PolicyProofClaim, proofRef: string): string {
+  const mac = createHmac('sha256', proofSecret())
+    .update(JSON.stringify([
+      'm8:public-policy-authorization:v1', proofRef, input.voteNullifier,
+      input.subjectUri, input.actorDid, input.signal,
+    ]))
+    .digest('base64url')
+  return `m8:policy:v1:${mac}`
 }
 
 function proofSecret(): string {
