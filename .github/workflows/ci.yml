@@ -15,13 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pnpm first: setup-node's pnpm cache asks pnpm for its store path.
+      # The version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
@@ -29,13 +30,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pnpm first: setup-node's pnpm cache asks pnpm for its store path.
+      # The version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Verify build artifacts exist
@@ -45,13 +47,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pnpm first: setup-node's pnpm cache asks pnpm for its store path.
+      # The version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx --test tests/unit/**/*.test.ts
 
@@ -59,13 +62,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pnpm first: setup-node's pnpm cache asks pnpm for its store path.
+      # The version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsx --test --test-force-exit tests/integration/**/*.test.ts
 
@@ -73,13 +77,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pnpm first: setup-node's pnpm cache asks pnpm for its store path.
+      # The version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: corepack enable
-      - run: corepack prepare pnpm@11.11.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: NODE_ENV=test pnpm exec tsx --test --test-force-exit tests/e2e/**/*.test.ts
 
@@ -97,6 +102,7 @@ jobs:
             -e JWT_SECRET=ci-jwt-secret-min-32-characters-long \
             -e APP_KEY=ci-app-key-exactly-16 \
             -e COOKIE_SECRET=ci-cookie-secret-16 \
+            -e CURP_PEPPER=ci-curp-pepper-at-least-32-characters \
             -e NODE_ENV=production \
             -e DATABASE_AUTOMIGRATE=true \
             -e SECURITY_HEADERS_ENABLED=true \
