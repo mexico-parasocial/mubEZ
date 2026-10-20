@@ -27,6 +27,17 @@ import {
 import { classifyIdentifier, applyHandleDomain } from '../../src/services/identifierValidation.js'
 import { isValidSurface, scopeForSurface } from '../../src/services/scopePolicy.js'
 import { getSessionId, t, validateBody } from '#support/http'
+import {
+  clearRefreshCookie,
+  readRefreshCookie,
+  refreshTransport,
+  sendRefreshCookie,
+} from '#support/web_refresh_cookie'
+
+const refreshCookieRefused = {
+  error: 'Cookie refresh transport is not available for this origin',
+  code: 'REFRESH_COOKIE_UNAVAILABLE',
+}
 
 const startSessionSchema = z.object({
   identifier: z.string().min(1).max(256),
@@ -270,6 +281,9 @@ export default class SessionsController {
   async exchange(ctx: HttpContext) {
     const body = validateBody(ctx, exchangeCodeSchema)
     if (!body) return
+    // Refuse before consuming the single-use code.
+    const transport = refreshTransport(ctx)
+    if (transport === 'refused') return ctx.response.status(403).send(refreshCookieRefused)
 
     let consumed: ReturnType<typeof consumeExchangeCode>
     try {
@@ -287,15 +301,16 @@ export default class SessionsController {
     }
 
     try {
+      const tokens = await issueTokenBundle(consumed.sessionId, {
+        source: 'oauth_exchange',
+        oauthAttemptId: consumed.attemptId,
+      })
       return ctx.response.send({
         authenticated: true,
         attemptId: consumed.attemptId,
         sessionId: consumed.sessionId,
         session: hydrateSession(consumed.sessionId),
-        tokens: await issueTokenBundle(consumed.sessionId, {
-          source: 'oauth_exchange',
-          oauthAttemptId: consumed.attemptId,
-        }),
+        tokens: transport === 'cookie' ? sendRefreshCookie(ctx, tokens) : tokens,
       })
     } catch (error) {
       if (error instanceof TokenIssueError) {
@@ -309,9 +324,18 @@ export default class SessionsController {
   }
 
   async logout(ctx: HttpContext) {
-    const body = validateBody(ctx, z.object({ refreshToken: z.string().min(1).max(256) }))
+    const transport = refreshTransport(ctx)
+    if (transport === 'refused') return ctx.response.status(403).send(refreshCookieRefused)
+    const refreshToken = z.string().min(1).max(256)
+    const body = validateBody(
+      ctx,
+      z.object({ refreshToken: transport === 'cookie' ? refreshToken.optional() : refreshToken }),
+    )
     if (!body) return
-    revokeRefreshToken(body.refreshToken, getSessionId(ctx))
+    const presented = body.refreshToken ?? readRefreshCookie(ctx)
+    // Revocation stays scoped to the authenticated session, as in body mode.
+    if (presented) revokeRefreshToken(presented, getSessionId(ctx))
+    if (transport === 'cookie') clearRefreshCookie(ctx)
     return ctx.response.send({ revoked: true })
   }
 
@@ -344,15 +368,32 @@ export default class SessionsController {
   }
 
   async refresh(ctx: HttpContext) {
-    const refreshToken = (ctx.request.body() as { refreshToken?: string } | null)?.refreshToken
+    const transport = refreshTransport(ctx)
+    if (transport === 'refused') return ctx.response.status(403).send(refreshCookieRefused)
+    const refreshToken =
+      transport === 'cookie'
+        ? readRefreshCookie(ctx)
+        : (ctx.request.body() as { refreshToken?: string } | null)?.refreshToken
     if (!refreshToken) {
+      if (transport === 'cookie') {
+        return ctx.response.status(401).send({ error: 'No web session', code: 'NO_REFRESH_COOKIE' })
+      }
       return ctx.response.status(400).send({ error: 'refreshToken is required' })
     }
 
     try {
-      return ctx.response.send(await rotateRefreshToken(refreshToken))
+      const { sessionId, ...tokens } = await rotateRefreshToken(refreshToken)
+      if (transport === 'body') return ctx.response.send(tokens)
+      // A reloaded page has nothing persisted but this cookie, so tell it whose session this is.
+      const row = getDb().prepare('SELECT did FROM sessions WHERE session_id = ?').get(sessionId) as
+        | { did: string }
+        | undefined
+      return ctx.response.send({ ...sendRefreshCookie(ctx, tokens), session: { sessionId, did: row?.did ?? null } })
     } catch (error) {
       const code = error instanceof TokenIssueError ? error.code : 'INVALID_REFRESH_TOKEN'
+      // Another tab may have just rotated this cookie; clearing it here could
+      // erase the replacement that tab received, so keep it on reuse.
+      if (transport === 'cookie' && code !== 'REFRESH_TOKEN_REUSED') clearRefreshCookie(ctx)
       return ctx.response.status(401).send({ error: 'Invalid refresh token', code })
     }
   }

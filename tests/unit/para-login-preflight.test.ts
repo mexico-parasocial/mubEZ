@@ -98,7 +98,7 @@ it('probes metadata, exact CORS and callback HTML with only unauthenticated GET/
     if (init?.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
       'access-control-allow-origin': 'https://para.example',
       'access-control-allow-methods': 'GET, POST',
-      'access-control-allow-headers': 'content-type, Authorization, x-m8-session-id',
+      'access-control-allow-headers': 'content-type, Authorization, x-m8-session-id, x-m8-refresh-transport',
     } })
     return new Response('<html></html>', { headers: { 'content-type': 'text/html; charset=utf-8' } })
   }

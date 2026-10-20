@@ -13,7 +13,7 @@ export default defineConfig({
   enabled: true,
   origin,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  headers: ['content-type', 'authorization', 'x-m8-session-id'],
+  headers: ['content-type', 'authorization', 'x-m8-session-id', 'x-m8-refresh-transport'],
   exposeHeaders: [],
   credentials: true,
   maxAge: 90,

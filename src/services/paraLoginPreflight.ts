@@ -107,13 +107,13 @@ export async function checkLoginEndpoints(
     const response = await get(`${broker}/v1/sessions/exchange`, {
       method: 'OPTIONS', headers: {
         Origin: web, 'Access-Control-Request-Method': 'POST',
-        'Access-Control-Request-Headers': 'content-type,authorization,x-m8-session-id',
+        'Access-Control-Request-Headers': 'content-type,authorization,x-m8-session-id,x-m8-refresh-transport',
       },
     })
     const methods = response.headers.get('access-control-allow-methods')?.split(',').map((value) => value.trim().toUpperCase()) ?? []
     const headers = response.headers.get('access-control-allow-headers')?.split(',').map((value) => value.trim().toLowerCase()) ?? []
     return response.ok && response.headers.get('access-control-allow-origin') === web && methods.includes('POST') &&
-      ['content-type', 'authorization', 'x-m8-session-id'].every((header) => headers.includes(header))
+      ['content-type', 'authorization', 'x-m8-session-id', 'x-m8-refresh-transport'].every((header) => headers.includes(header))
   }, 'The deployed broker must accept the exact browser origin and exchange headers.')
   await probe('web-callback-route', async () => {
     const response = await get(`${web}/m8-auth`)
