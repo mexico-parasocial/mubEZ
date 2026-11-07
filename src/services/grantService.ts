@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection.js'
 import { hydrateSession } from './sessionService.js'
+import { syncAgeTree } from './ageTree.js'
 import { verifyClaimRouted } from './claimVerification.js'
 import type {
   ProofBrokerClaimSpec,
@@ -147,6 +148,11 @@ export function revokeGrant(sessionId: string, input: ProofBrokerGrantRevokeInpu
 
   db.prepare('UPDATE grants SET status = ? WHERE id = ?').run('revoked', input.grantId)
   db.prepare('UPDATE proof_artifacts SET status = ?, revoked_at = ? WHERE grant_id = ?').run('revoked', now, input.grantId)
+  // Take the revoked enrollments' age leaves out of the tree now. Best
+  // effort: the next tree read reconciles it regardless (ageTree.ts).
+  void syncAgeTree({ force: true }).catch((error) => {
+    console.error('[ageTree] sync after grant revocation failed', error)
+  })
 
   db.prepare(`
     INSERT INTO ledger (session_id, action, target_type, target_id, detail_json)

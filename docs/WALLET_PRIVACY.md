@@ -138,9 +138,10 @@ The PARA gate (`WALLET_HOLDER_KEY_SUPPORTED`), the iM8 gate
 2. **A real issuer integration:** INE approval, a production issuer key out of
    environment variables, the issuer key pinned in iM8 (`trustedIssuerKeys`),
    and real INE verification instead of simulation.
-3. **Age proofs bound to the issuer.** The age proof accepted at issuance is
-   not bound to the INE birth date (see `V3_UNLINKABLE_AGE_PROOFS.md`); a real
-   issuer must check the birth date itself.
+3. **Age proofs bound to the issuer.** Done for issuance (CD-16): the issuer
+   attests the age claims from the INE birth date, to the day, and no longer
+   trusts the age proof's `birthYear`. Release still needs v3 for the
+   presentation side (CD-15).
 4. **iM8 approval screens** for binding and presenting that render
    `planPresentation` in full: every revealed claim and every linkable
    identifier.

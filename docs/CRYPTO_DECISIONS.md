@@ -866,3 +866,93 @@ release requirement, not a nice-to-have.
 **Supersedes.** CD-13's framing of v3 as optional, and the conditional in
 `WALLET_PRIVACY.md` release blocker 7.
 
+
+---
+
+## CD-16 — The issuer attests age from the INE birth date, and publishes the v3 age tree
+
+**Decision.** Two of CD-15's prerequisites, built.
+
+1. **Age claims are the issuer's.** `/identity/ine/credential` sets
+   `age_over_18` and `age_over_21` from the birth date on the INE record, to
+   the day (`src/services/ageAttestation.ts`). An underage record is refused
+   (`AGE_NOT_ATTESTED`) whatever the client proves; an over-21 proof the
+   birth date does not support is refused (`AGE_CLAIM_MISMATCH`); a birth
+   date that is not a real calendar date, is in the future, or precedes
+   1900 is refused (`BIRTH_DATE_INVALID`). `age_over_21` stays opt-in: it is
+   true only when the holder sent an over-21 proof *and* the birth date
+   supports it. The Groth16 age proofs still decide the enrollment
+   commitment; they no longer decide age.
+2. **The issuer age tree** (`src/services/ageTree.ts`, migration 039) is the
+   issuer half of `V3_UNLINKABLE_AGE_PROOFS.md`: a depth-20 Poseidon Merkle
+   tree of `leaf = Poseidon(H, birthDay, expiryDay)`, inner nodes
+   `Poseidon(left, right)`, empty slots 0 (the Semaphore layout). `H` comes
+   from the holder (with `ageLeafCommitment` on issuance, or with the wallet's
+   relay binding); `birthDay` comes from the INE record. Every tree version
+   gets a root signed with the credential issuer key
+   (`m8.identity.ageTree.root.v1`).
+
+**Conventions fixed here**, since the v3 circuit and verifiers must match them:
+
+- **Days** are counted from 1900-01-01, so every birth day of a living person
+  is a small non-negative field element. (The Unix epoch would make birth
+  days before 1970 negative.)
+- **"Today"** is the calendar date in `America/Tijuana`, the westernmost
+  Mexican zone. A birthday never counts anywhere in Mexico before it has begun
+  everywhere in Mexico: the issuer is never early, and is at most a few hours
+  late in the east. The v3 verifier's public `today` must be on this calendar.
+- **Leap days.** The anniversary of 29 February in a common year is
+  28 February: the cutoff date is clamped to its month's end, so someone born
+  on 1 March never counts a day early.
+- **Leaves are short-lived:** `expiryDay` is 28 days out, and never later than
+  the day before the enrollment ends. The holder refreshes it by proving the
+  old leaf's preimage (`POST /identity/age-tree/leaves/refresh`); the issuer
+  keeps no birth date, only leaf hashes, so the preimage is what carries the
+  attested birth day forward.
+- **Revocation window W = 24 h.** A verifier accepts the current root, and a
+  superseded root for 24 h after it was superseded
+  (`GET /identity/age-tree/roots`).
+
+**Why the tree is derived state.** A leaf is in the tree exactly when it is
+not replaced, its enrollment is active and unexpired, and its `expiryDay` has
+not passed; `syncAgeTree()` reconciles the nodes with that rule. Revocation
+paths (the revoke endpoint, grant revocation) force a sync so the new root is
+published at once, but correctness does not depend on each path remembering
+to: public reads reconcile again at most every 30 s, which also covers
+suspension, expiry and paths added later. The leaf → enrollment mapping is
+deliberately not a foreign key, because a cascade would delete the row while
+its node is still in the tree; a missing enrollment zeroes the leaf instead.
+
+**What a wallet reads.** Whole chunks of 1024 leaves
+(`GET /identity/age-tree/chunks/:chunk`) and the 1024 nodes above them
+(`GET /identity/age-tree/chunk-roots`), never "my path". The issuer learns at
+most which chunk a refreshing wallet sits in, and when.
+`merklePathFromChunks()` is the reference for rebuilding the path; it refuses
+a chunk and chunk roots from different tree versions.
+
+**Rejected alternatives.**
+
+- *Keep deriving age from the proof's `birthYear`.* It is a witness the client
+  picks; it proves only that some year satisfies the threshold (THREAT_MODEL
+  gap 8), and only to the year.
+- *Check the proof's `birthYear` against the INE year.* Impossible without the
+  salt, which never leaves the device, and still only year-accurate.
+- *Store the birth day to re-issue leaves.* A table of birth days per
+  enrollment is exactly the PII the commitments avoid keeping. The holder
+  holds the preimage instead.
+- *Serve each wallet its own Merkle path.* Tells the issuer the leaf index on
+  every refresh.
+- *An in-circuit issuer signature instead of membership.* EdDSA-Poseidon in
+  the circuit costs far more constraints than a Merkle proof, and still needs
+  a separate revocation mechanism.
+
+**Not done here** (still required by CD-15): the v3 circuit, a multi-party
+setup and an audit, the wallet side, the session-free presentation transport,
+and retiring `commitment` from the nullifier proof. The tree is published but
+nothing accepts v3 proofs yet.
+
+**Consequences.** THREAT_MODEL gap 8 is closed for the issuance check: the
+age claim rests on the INE record, so it is exactly as trustworthy as that
+record. In this build that record is still the simulated, client-relayed INE
+extraction (WALLET_PRIVACY release blocker 2); binding the record itself to a
+real INE verification is a separate step.

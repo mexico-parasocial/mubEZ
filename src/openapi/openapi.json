@@ -1010,6 +1010,7 @@
         "required": [
           "extracted",
           "verification",
+          "issuanceChallenge",
           "ageProofs"
         ],
         "properties": {
@@ -1033,6 +1034,26 @@
               }
             },
             "additionalProperties": false
+          },
+          "issuanceChallenge": {
+            "type": "string",
+            "description": "The session's current single-use issuance challenge (GET /v1/sessions/me)."
+          },
+          "holderPublicKey": {
+            "type": "string",
+            "description": "Ed25519 SPKI PEM wallet key bound into the credentials."
+          },
+          "holderKeyProof": {
+            "type": "string",
+            "description": "base64url signature over m8.identity.holder-binding.v1:<issuanceChallenge>."
+          },
+          "walletBindingRequestId": {
+            "type": "string",
+            "description": "A binding the iM8 wallet made through the relay, instead of holderPublicKey/holderKeyProof."
+          },
+          "ageLeafCommitment": {
+            "type": "string",
+            "description": "H = Poseidon(s, r) for the holder's device-held v3 age secret s: a canonical decimal, non-zero BN254 field element. When present, the issuer also adds an age tree leaf with the INE birth day. Not accepted with walletBindingRequestId: the wallet sends it with its binding."
           }
         },
         "additionalProperties": false
@@ -1091,7 +1112,6 @@
       "IneCredentialResponse": {
         "type": "object",
         "required": [
-          "credential",
           "proofArtifactId",
           "verificationId",
           "commitment"
@@ -1111,6 +1131,32 @@
           },
           "anonymousProfile": {
             "$ref": "#/components/schemas/AnonymousProfile"
+          },
+          "basicCredential": {
+            "$ref": "#/components/schemas/SignedCredential"
+          },
+          "credentialDelivery": {
+            "type": "string",
+            "const": "wallet",
+            "description": "Present when the credentials went to the wallet relay instead of this response."
+          },
+          "walletBindingRequestId": {
+            "type": "string"
+          },
+          "ageLeaf": {
+            "$ref": "#/components/schemas/IssuedAgeLeaf"
+          },
+          "ageLeafError": {
+            "type": "object",
+            "description": "The age leaf could not be issued; the enrollment and credentials were.",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            }
           }
         },
         "additionalProperties": false
@@ -1241,6 +1287,103 @@
           "signedAt": {
             "type": "string",
             "description": "RFC 3339 UTC."
+          }
+        }
+      },
+      "AgeTreeRoot": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "An issuer-signed age tree root (CD-16). The signature is Ed25519, base64url, over the newline-joined fields alg, issuerDid, keyId, depth, version, size, root, issuedAt; verify it with the /v1/issuers key whose keyId matches.",
+        "required": [
+          "alg",
+          "version",
+          "depth",
+          "size",
+          "root",
+          "issuedAt",
+          "issuerDid",
+          "keyId",
+          "signature"
+        ],
+        "properties": {
+          "alg": {
+            "type": "string",
+            "const": "m8.identity.ageTree.root.v1"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "depth": {
+            "type": "integer",
+            "const": 20
+          },
+          "size": {
+            "type": "integer",
+            "description": "Leaf slots used so far (the next leaf index)."
+          },
+          "root": {
+            "type": "string",
+            "description": "Decimal BN254 field element."
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issuerDid": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          }
+        }
+      },
+      "AcceptableAgeTreeRoot": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgeTreeRoot"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "supersededAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "When a newer root replaced this one; null for the current root."
+              }
+            }
+          }
+        ]
+      },
+      "IssuedAgeLeaf": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A v3 age tree leaf Poseidon(H, birthDay, expiryDay). Holder-only: birthDay is the issuer-attested INE birth day (days since 1900-01-01), and the wallet keeps all of it as private witness.",
+        "required": [
+          "leafIndex",
+          "birthDay",
+          "expiryDay",
+          "root"
+        ],
+        "properties": {
+          "leafIndex": {
+            "type": "integer"
+          },
+          "birthDay": {
+            "type": "integer",
+            "description": "Days since 1900-01-01, from the INE record."
+          },
+          "expiryDay": {
+            "type": "integer",
+            "description": "Last day (issuer calendar, America/Tijuana) the leaf proves anything."
+          },
+          "root": {
+            "$ref": "#/components/schemas/AgeTreeRoot"
           }
         }
       }
@@ -3319,7 +3462,7 @@
         "tags": [
           "INE"
         ],
-        "summary": "Issue INE-backed credentials from client-generated age proofs. Requires either holderPublicKey + holderKeyProof (signature over m8.identity.holder-binding.v1:<issuanceChallenge>), or walletBindingRequestId from the iM8 wallet relay; with the latter the credentials are delivered to the wallet and omitted from this response. Issues the full credential and a minimized basicCredential without curp_hash or district_hash; both are holder-bound and share one revocationHash.",
+        "summary": "Issue INE-backed credentials from client-generated age proofs. Requires either holderPublicKey + holderKeyProof (signature over m8.identity.holder-binding.v1:<issuanceChallenge>), or walletBindingRequestId from the iM8 wallet relay; with the latter the credentials are delivered to the wallet and omitted from this response. Issues the full credential and a minimized basicCredential without curp_hash or district_hash; both are holder-bound and share one revocationHash. The age claims are attested from the INE birth date to the day (CD-16), not from the age proofs, whose birthYear is a client witness. With ageLeafCommitment the issuer also adds a v3 age tree leaf.",
         "security": [
           {
             "bearerAuth": []
@@ -3347,7 +3490,7 @@
             }
           },
           "400": {
-            "description": "Invalid or mismatched age proof.",
+            "description": "Invalid or mismatched age proof; BIRTH_DATE_INVALID; AGE_CLAIM_MISMATCH (an over-21 proof the birth date does not support); AGE_LEAF_COMMITMENT_INVALID; AGE_LEAF_COMMITMENT_FROM_WALLET.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3371,6 +3514,16 @@
           },
           "422": {
             "$ref": "#/components/responses/ValidationFailed"
+          },
+          "403": {
+            "description": "AGE_NOT_ATTESTED: the INE birth date is under 18; or ISSUANCE_CHALLENGE_INVALID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -6467,6 +6620,10 @@
                   "holderKeyProof": {
                     "type": "string",
                     "description": "base64url Ed25519 signature over m8.identity.holder-binding.v1:<issuanceChallenge>."
+                  },
+                  "ageLeafCommitment": {
+                    "type": "string",
+                    "description": "H = Poseidon(s, r) for the holder's device-held v3 age secret s: a canonical decimal, non-zero BN254 field element. Optional; the issuer uses it for the age tree leaf of the issuance this binding serves."
                   }
                 }
               }
@@ -6491,7 +6648,7 @@
             "description": "Not found, expired, or not in the state the call needs."
           },
           "400": {
-            "description": "Invalid proof, or not pending."
+            "description": "Invalid proof, not pending, or AGE_LEAF_COMMITMENT_INVALID."
           }
         }
       }
@@ -6577,6 +6734,281 @@
           },
           "404": {
             "description": "Not found, expired, or not in the state the call needs."
+          }
+        }
+      }
+    },
+    "/v1/identity/age-tree/root": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "The current issuer-signed age tree root (CD-16). Public and session-free.",
+        "responses": {
+          "200": {
+            "description": "Signed root.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgeTreeRoot"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AGE_TREE_UNSIGNED: not published yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/age-tree/roots": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Every root a v3 verifier should accept now: the current one and those superseded less than windowSeconds ago, newest first. Revoking an enrollment takes effect within that window.",
+        "responses": {
+          "200": {
+            "description": "Acceptable roots.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "depth": {
+                      "type": "integer"
+                    },
+                    "chunkSize": {
+                      "type": "integer"
+                    },
+                    "windowSeconds": {
+                      "type": "integer"
+                    },
+                    "roots": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AcceptableAgeTreeRoot"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/age-tree/chunks/{chunk}": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "The leaves of one chunk (1024 leaf slots): wallets fetch their whole chunk, never their own path, so the issuer learns at most the chunk. Zeroed and unused slots read \"0\"; slots past size are omitted.",
+        "parameters": [
+          {
+            "name": "chunk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1023
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chunk leaves.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "integer"
+                    },
+                    "root": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer"
+                    },
+                    "chunk": {
+                      "type": "integer"
+                    },
+                    "start": {
+                      "type": "integer"
+                    },
+                    "leaves": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "AGE_TREE_CHUNK_INVALID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/age-tree/chunk-roots": {
+      "get": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "The tree nodes at level 10, one per chunk up to the last used one. With a chunk, enough to rebuild a full Merkle path.",
+        "responses": {
+          "200": {
+            "description": "Chunk roots.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "integer"
+                    },
+                    "root": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer"
+                    },
+                    "level": {
+                      "type": "integer"
+                    },
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/age-tree/leaves/refresh": {
+      "post": {
+        "tags": [
+          "Identity"
+        ],
+        "summary": "Re-issue the caller's age leaf with a fresh expiry, on proof of its preimage (H, birthDay, expiryDay). The old leaf is replaced and leaves the tree. The enrollment must be active and belong to the session.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "leafIndex",
+                  "leafCommitment",
+                  "birthDay",
+                  "expiryDay"
+                ],
+                "properties": {
+                  "leafIndex": {
+                    "type": "integer"
+                  },
+                  "leafCommitment": {
+                    "type": "string",
+                    "description": "H = Poseidon(s, r) for the holder's device-held v3 age secret s: a canonical decimal, non-zero BN254 field element."
+                  },
+                  "birthDay": {
+                    "type": "integer"
+                  },
+                  "expiryDay": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new leaf.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedAgeLeaf"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "AGE_LEAF_COMMITMENT_INVALID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "AGE_LEAF_MISMATCH, or AGE_LEAF_ENROLLMENT_INACTIVE.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AGE_LEAF_NOT_FOUND (also for another session's leaf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AGE_LEAF_REPLACED.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
           }
         }
       }

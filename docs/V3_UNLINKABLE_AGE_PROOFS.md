@@ -1,6 +1,7 @@
 # Proposal: unlinkable age proofs (`m8.identity.presentation.v3`)
 
-Status: **required (CD-15), not built.** Age checks must leave no trace, so v3
+Status: **required (CD-15); issuer side built (CD-16), circuit, wallet and
+transport not.** Age checks must leave no trace, so v3
 is the release path for statements like "at least 18". v2 stays only for
 requests whose purpose is to identify (`curp_hash`, `district_hash`), which
 are linkable by nature.
@@ -32,9 +33,9 @@ Reusable:
 
 Not reusable as-is:
 - `ine_age_proof` is **not issuer-bound**. `birthYear` is a free witness the
-  client chooses; the issuer never signs or checks the commitment, and
-  `/identity/ine/credential` does not compare it with the INE birth date.
-  Today it proves only that *some* year satisfies the threshold.
+  client chooses; the issuer never signs or checks the commitment. It proves
+  only that *some* year satisfies the threshold. Since CD-16 the issuer no
+  longer relies on it for the age claim, and reads the INE birth date instead.
 - Both circuits **publish `commitment`**, a stable identifier. `nullifier_proof`
   outputs it next to the per-community nullifier, and mubEZ stores
   `(nullifier, community_id, commitment, session_id)`. Community memberships
@@ -118,9 +119,13 @@ issuer learns *when* a holder refreshes, not what it proves.
 
 1. **Build.** New circuit, a multi-party phase-2 ceremony (or PLONK with a
    universal setup, which snarkjs supports), and a circuit audit.
-2. **Issuer.** Issuer tree and signed-root publication; revocation by leaf
-   zeroing; `/identity/ine/credential` adds a leaf alongside v2 issuance, the
-   birth date taken from the INE record rather than a client witness.
+2. **Issuer.** *Built (CD-16, `src/services/ageTree.ts`).* Issuer tree and
+   signed-root publication; revocation by leaf zeroing; `/identity/ine/credential`
+   adds a leaf alongside v2 issuance when given `ageLeafCommitment`, the
+   birth date taken from the INE record rather than a client witness. Day
+   numbers count from 1900-01-01 and "today" is the `America/Tijuana`
+   calendar date; leaves live 28 days and are refreshed on proof of their
+   preimage; roots stay acceptable 24 h after being superseded.
 3. **Wallet.** The iM8 wallet stores `s` and paths; the prover WebView gains
    the v3 circuit.
 4. **Transport.** A token-addressed request/response route for v3

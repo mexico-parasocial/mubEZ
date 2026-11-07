@@ -217,9 +217,11 @@ export function simulateIneExtraction(payloadBase64: string): {
   const maternal = pick(rng, LAST_NAMES)
   const fullName = `${firstName} ${paternal} ${maternal}`
 
-  // Birth date: 18-65 years ago
+  // Birth date: 19-65 calendar years ago, so the simulated document is
+  // always at least 18 to the day (the issuer now attests age from it, CD-16).
+  // Same number of draws as before, so other seeded fields are unchanged.
   const now = new Date()
-  const minAge = 18
+  const minAge = 19
   const maxAge = 65
   const ageYears = minAge + Math.floor(rng() * (maxAge - minAge))
   const birthYear = now.getFullYear() - ageYears

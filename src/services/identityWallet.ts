@@ -108,8 +108,12 @@ function getSigningIssuer(): SigningIssuer {
   }
 }
 
-/** The signer used for credential issuance: configured key if present, demo key otherwise (dev only). */
-function getIssuerSigner(): IssuerSigner {
+/**
+ * The signer used for credential issuance: configured key if present, demo key
+ * otherwise (dev only). Also signs the age tree roots (ageTree.ts), so a root
+ * verifies under the same keys `/v1/issuers` publishes.
+ */
+export function getIssuerSigner(): IssuerSigner {
   if (loadConfiguredIssuer()) {
     return getSharedIssuerSigner()
   }

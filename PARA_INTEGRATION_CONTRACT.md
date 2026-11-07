@@ -12,7 +12,7 @@ PARA is the authoritative source for:
 - **Party affiliation** (`has_party_affiliation_match`)
 
 PARA does **not** verify:
-- Age eligibility (M8 issues the age claim at INE enrollment. The client-side ZK age proof is not yet bound to the INE birth date; see THREAT_MODEL gap 8)
+- Age eligibility (M8 issues the age claim at INE enrollment, attested from the INE birth date to the day, not from the client's ZK age proof; see CD-16)
 - Backup coverage (M8 checks PDS state directly)
 - Device trust (M8 manages its own device trust graph)
 

@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { getDb } from '../../src/db/connection.js'
 import { mapClaimTypeToParaRecordType } from '../../src/services/paraTrustContract.js'
 import { validateRevocationTransition } from '../../src/services/paraTrustEnforcer.js'
+import { syncAgeTree } from '../../src/services/ageTree.js'
 import { getSessionId, t } from '#support/http'
 
 export default class RevocationController {
@@ -46,6 +47,14 @@ export default class RevocationController {
       JSON.stringify({ reason: body.reason ?? $t('ledger.reason.userRevoked'), revocationHash: artifact.revocation_hash, targetStatus }),
       now,
     )
+
+    // Zero the enrollment's age leaf and publish the new root now, so the
+    // revocation window starts here rather than at the next tree read. The
+    // revocation itself is already committed; a failure here only delays it
+    // to that next read, which reconciles the tree again.
+    await syncAgeTree({ force: true }).catch((error) => {
+      ctx.logger.error({ err: error }, 'age tree sync after revocation failed')
+    })
 
     return ctx.response.send({ revoked: targetStatus === 'revoked', suspended: targetStatus === 'suspended', status: targetStatus, revokedAt: now })
   }

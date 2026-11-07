@@ -11,6 +11,8 @@ import { boundHolderKeyForIssuance, depositIssuedCredentials } from '../../src/s
 import { hydrateSession } from '../../src/services/sessionService.js'
 import { isValidIssuanceChallenge, rotateIssuanceChallenge } from '../../src/services/issuanceChallenge.js'
 import { Features, assertDemoPathAllowed } from '../../src/services/features.js'
+import { attestAgeFromIneBirthDate } from '../../src/services/ageAttestation.js'
+import { AgeTreeError, appendAgeLeaf, parseLeafCommitment, type IssuedAgeLeaf } from '../../src/services/ageTree.js'
 import { getSessionId, validateBody, t } from '#support/http'
 
 const ageProofSchema = z.object({
@@ -35,6 +37,10 @@ const ineCredentialSchema = z.object({
   // Alternatively, a binding the iM8 wallet made through the relay (CD-14).
   // The credentials then go to the wallet's mailbox, not to the caller.
   walletBindingRequestId: z.string().min(1).max(128).optional(),
+  // H = Poseidon(s, r) for the holder's v3 age secret s. When present, the
+  // issuer also adds an age tree leaf with the INE birth day (ageTree.ts).
+  // Through the relay the wallet sends it with its binding instead.
+  ageLeafCommitment: z.string().min(1).max(80).optional(),
 }).strict()
 
 type AgeProofPayload = z.infer<typeof ageProofSchema>
@@ -115,13 +121,29 @@ export default class IneController {
         code: 'HOLDER_KEY_PROOF_REQUIRED',
       })
     }
-    const walletHolderKey = viaWallet
+    const walletBinding = viaWallet
       ? boundHolderKeyForIssuance(sessionId, body.walletBindingRequestId!, body.issuanceChallenge)
       : null
-    if (viaWallet && !walletHolderKey) {
+    if (viaWallet && !walletBinding) {
       return ctx.response.status(400).send({
         error: 'Wallet binding is not bound to this issuance challenge',
         code: 'WALLET_BINDING_NOT_READY',
+      })
+    }
+    // H must come from whoever holds the secret behind it: the caller in
+    // direct mode, the wallet's binding through the relay. PARA never sends it.
+    if (viaWallet && body.ageLeafCommitment !== undefined) {
+      return ctx.response.status(400).send({
+        error: 'Through the wallet relay, the wallet sends ageLeafCommitment with its binding',
+        code: 'AGE_LEAF_COMMITMENT_FROM_WALLET',
+      })
+    }
+    const rawLeafCommitment = viaWallet ? walletBinding!.ageLeafCommitment : body.ageLeafCommitment ?? null
+    const leafCommitment = rawLeafCommitment === null ? null : parseLeafCommitment(rawLeafCommitment)
+    if (rawLeafCommitment !== null && leafCommitment === null) {
+      return ctx.response.status(400).send({
+        error: 'ageLeafCommitment must be a non-zero BN254 field element',
+        code: 'AGE_LEAF_COMMITMENT_INVALID',
       })
     }
 
@@ -149,6 +171,22 @@ export default class IneController {
     const verification = body.verification as import('../../src/types/index.js').IneVerificationResult
 
     const now = new Date()
+
+    // The age claims are the issuer's, from the INE birth date, to the day
+    // (CD-16). The client's age proofs only decide the commitment: their
+    // birthYear is a witness the client picks, so they cannot vouch for age.
+    // Checked before the proofs, which are the expensive part.
+    const age = attestAgeFromIneBirthDate(extracted.birthDate, now)
+    if (!age.ok) {
+      return ctx.response.status(400).send({ error: 'The INE record has no valid birth date', code: 'BIRTH_DATE_INVALID' })
+    }
+    if (!age.over18) {
+      return ctx.response.status(403).send({ error: 'The INE birth date does not attest age 18 or over', code: 'AGE_NOT_ATTESTED' })
+    }
+    if (body.ageProofs.over21 && !age.over21) {
+      return ctx.response.status(400).send({ error: 'An over-21 proof was sent but the INE birth date does not attest age 21 or over', code: 'AGE_CLAIM_MISMATCH' })
+    }
+
     const currentYear = now.getFullYear()
     const over18 = await verifyAgeProofPayload(body.ageProofs.over18, 18, currentYear)
     if (!over18.valid) {
@@ -176,22 +214,53 @@ export default class IneController {
       verification,
       commitment: over18.commitment,
       over21Verified,
-      holderPublicKey: walletHolderKey ?? body.holderPublicKey!,
+      holderPublicKey: walletBinding?.holderPublicKey ?? body.holderPublicKey!,
       $t,
     })
     if (!result.ok) {
       return ctx.response.status(result.status).send({ error: result.error, code: result.code })
     }
+
+    // The v3 age leaf, with the birth day the issuer read from the INE record.
+    // The enrollment and its credentials are committed by now, so a failure
+    // here must not cost the holder their credentials: they are delivered
+    // and the leaf failure is reported next to them.
+    let ageLeaf: IssuedAgeLeaf | undefined
+    let ageLeafError: { code: string; error: string } | undefined
+    if (leafCommitment !== null) {
+      try {
+        ageLeaf = await appendAgeLeaf({
+          proofArtifactId: result.body.proofArtifactId,
+          leafCommitment,
+          birthDay: age.birthDay,
+          enrollmentExpiresAt: result.body.expiresAt,
+          now,
+        })
+      } catch (error) {
+        ctx.logger.error({ err: error }, 'age leaf issuance failed')
+        ageLeafError = error instanceof AgeTreeError
+          ? { code: error.code, error: error.message }
+          : { code: 'AGE_LEAF_NOT_ISSUED', error: 'The age leaf could not be issued' }
+      }
+    }
+
+    const { expiresAt: _expiresAt, ...issued } = result.body
     if (viaWallet) {
-      const { credential, basicCredential, ...rest } = result.body
+      const { credential, basicCredential, ...rest } = issued
       depositIssuedCredentials(sessionId, body.walletBindingRequestId!, {
         proofArtifactId: rest.proofArtifactId,
         credential: credential!,
         basicCredential: basicCredential!,
+        ...(ageLeaf ? { ageLeaf } : {}),
       })
-      return ctx.response.send({ ...rest, credentialDelivery: 'wallet', walletBindingRequestId: body.walletBindingRequestId })
+      return ctx.response.send({
+        ...rest,
+        credentialDelivery: 'wallet',
+        walletBindingRequestId: body.walletBindingRequestId,
+        ...(ageLeafError ? { ageLeafError } : {}),
+      })
     }
-    return ctx.response.send(result.body)
+    return ctx.response.send({ ...issued, ...(ageLeaf ? { ageLeaf } : {}), ...(ageLeafError ? { ageLeafError } : {}) })
   }
 
   /**
@@ -229,6 +298,11 @@ export default class IneController {
     const seed = Buffer.from(`para-dev-enroll:${did}`).toString('base64')
     const { extracted } = simulateIneExtraction(seed)
     const verification = simulateIneVerification(extracted, seed)
+    // Same rule as the real endpoint: the issuer attests age from the record.
+    const age = attestAgeFromIneBirthDate(extracted.birthDate)
+    if (!age.ok || !age.over18) {
+      return ctx.response.status(403).send({ error: 'The simulated INE birth date does not attest age 18 or over', code: 'AGE_NOT_ATTESTED' })
+    }
     const currentYear = new Date().getFullYear()
     const over18 = await generateAgeProof({
       birthYear: new Date(extracted.birthDate).getFullYear(),

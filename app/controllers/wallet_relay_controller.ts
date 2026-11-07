@@ -9,10 +9,13 @@ import {
   getWalletBindingRequest,
   listWalletBindingRequests,
 } from '../../src/services/walletRelayService.js'
+import { parseLeafCommitment } from '../../src/services/ageTree.js'
 
 const fulfillSchema = z.object({
   holderPublicKey: z.string().min(1).max(1024),
   holderKeyProof: z.string().min(1).max(256),
+  // H = Poseidon(s, r) for the wallet's v3 age secret s (ageTree.ts).
+  ageLeafCommitment: z.string().min(1).max(80).optional(),
 }).strict()
 
 /**
@@ -54,6 +57,9 @@ export default class WalletRelayController {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, fulfillSchema)
     if (!body) return
+    if (body.ageLeafCommitment !== undefined && parseLeafCommitment(body.ageLeafCommitment) === null) {
+      return ctx.response.status(400).send({ error: 'ageLeafCommitment must be a non-zero BN254 field element', code: 'AGE_LEAF_COMMITMENT_INVALID' })
+    }
     const result = fulfillWalletBindingRequest(sessionId, ctx.params.id, body)
     if (!result.ok) {
       return ctx.response.status(result.reason === 'not-found' ? 404 : 400).send({ error: result.reason })
