@@ -5,7 +5,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { getSessionId, validateBody } from '#support/http'
 import {
   issueCivicVoteProof,
+  readCivicVoteEligibility,
   verifyCabildeoVoteProof,
+  verifyPolicyVoteProof,
 } from '../../src/services/civicVoteIdentityService.js'
 import {
   issueCivicDelegationProof,
@@ -29,16 +31,28 @@ const proofSchema = z
     subjectUri: z.string().min(1).max(1024),
     subjectType: subjectTypeSchema,
     selectedOption: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    signal: z.number().int().min(-3).max(3).optional(),
   })
   .strict()
 
-const verificationSchema = z.object({
+const cabildeoVerificationSchema = z.object({
   actorDid: z.string().startsWith('did:').max(512),
   subjectUri: z.string().startsWith('at://').max(1024),
   selectedOption: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   voteNullifier: z.string().regex(/^[a-f0-9]{64}$/),
   eligibilityProofRef: z.string().regex(/^m8:cabildeo:v1:[A-Za-z0-9_-]{43}$/),
 }).strict()
+
+// A public policy ballot binds its -3..+3 signal instead of an option.
+const policyVerificationSchema = z.object({
+  actorDid: z.string().startsWith('did:').max(512),
+  subjectUri: z.string().startsWith('at://').max(1024),
+  signal: z.number().int().min(-3).max(3),
+  voteNullifier: z.string().regex(/^[a-f0-9]{64}$/),
+  eligibilityProofRef: z.string().regex(/^m8:policy:v1:[A-Za-z0-9_-]{43}$/),
+}).strict()
+
+const verificationSchema = z.union([cabildeoVerificationSchema, policyVerificationSchema])
 
 const activeDelegationSchema = z.object({
   mode: z.literal('active'),
@@ -63,6 +77,11 @@ const delegationVerificationSchema = z.object({
 }).and(delegationSchema)
 
 export default class CivicVoteIdentityController {
+  async eligibility(ctx: HttpContext) {
+    ctx.response.header('Cache-Control', 'no-store')
+    return ctx.response.send(readCivicVoteEligibility(getSessionId(ctx)))
+  }
+
   async issueProof(ctx: HttpContext) {
     const sessionId = getSessionId(ctx)
     const body = validateBody(ctx, proofSchema)
@@ -73,7 +92,10 @@ export default class CivicVoteIdentityController {
   async verifyProof(ctx: HttpContext) {
     const body = validateBody(ctx, verificationSchema)
     if (!body) return
-    if (!verifyCabildeoVoteProof(body)) {
+    const valid = 'signal' in body
+      ? verifyPolicyVoteProof(body)
+      : verifyCabildeoVoteProof(body)
+    if (!valid) {
       return ctx.response.status(422).send({ code: 'INVALID_VOTE_PROOF' })
     }
     return ctx.response.status(204).send(null)

@@ -115,6 +115,7 @@ router
         router.post('/identity/ine/zkp-verify', '#controllers/zk_proof_controller.zkpVerify')
         router.post('/identity/revoke', '#controllers/revocation_controller.revoke')
         router.post('/identity/ine/zkp-nullifier', '#controllers/zk_proof_controller.zkpNullifier')
+        router.get('/identity/civic-vote-eligibility', '#controllers/civic_vote_identity_controller.eligibility')
         router.post('/identity/civic-vote-proof', '#controllers/civic_vote_identity_controller.issueProof')
         router.post('/identity/civic-delegation-proof', '#controllers/civic_vote_identity_controller.issueDelegationProof')
 
