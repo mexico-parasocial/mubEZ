@@ -53,6 +53,10 @@ pnpm test:integration
 pnpm test:e2e
 ```
 
+Tests that generate proofs use the insecure, committed test keys
+(`ZKP_ARTIFACT_SET=test`, set by the scripts above; see `zkp/README.md`). The
+production wasm/zkey are not in git, and production refuses the test set.
+
 ## Docker
 
 ```bash

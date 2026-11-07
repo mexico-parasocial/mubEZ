@@ -67,6 +67,7 @@
 - **Duplicate commitment rejection**: 409 conflict if commitment is already active.
 - **Nullifier uniqueness**: One nullifier per (salt, communityId) pair enforced in DB.
 - **Issuer key rotation**: Previous key is verification-only and auto-expires.
+- **Test ZKP keys never verify in production**: the committed test artifact set (`zkp/test-artifacts/`, public setup entropy, forgeable) loads only with `ZKP_ARTIFACT_SET=test`, which is refused when `NODE_ENV=production` at boot and at load, and is excluded from the build and the image.
 - **Demo path lockout**: Demo/simulated/dev paths require both GrowthBook flag **and** (`non-production env` or explicit break-glass env). A flag alone cannot open them in production.
 
 ### Best-Effort Controls

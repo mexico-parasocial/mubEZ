@@ -77,6 +77,13 @@ export default await Env.create(new URL('../', import.meta.url), {
     return 'dev-curp-pepper-do-not-use-in-production'
   })),
   CURP_PEPPER_KEY_ID: zodEnv(z.string().min(1).default('pepper-env-1')),
+  // Which pinned ZKP artifact set to load (src/services/zkpArtifacts.ts).
+  // "test" is the insecure, publicly reproducible set in zkp/test-artifacts/;
+  // anyone can forge proofs against it, so production refuses to boot with it.
+  ZKP_ARTIFACT_SET: zodEnv(z.enum(['production', 'test']).default('production').refine(
+    (set) => set !== 'test' || process.env.NODE_ENV !== 'production',
+    'ZKP_ARTIFACT_SET=test is refused in production: its proving keys are forgeable',
+  )),
   CURP_PEPPER_PREVIOUS: zodEnv(z.string().min(32).optional()),
   CURP_PEPPER_PREVIOUS_KEY_ID: zodEnv(z.string().min(1).optional()),
   IDENTITY_ISSUER_DID: zodEnv(z.string().min(1).optional()),

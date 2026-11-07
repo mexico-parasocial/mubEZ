@@ -71,7 +71,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # The insecure, committed test keys (zkp/test-artifacts/): the production
+      # wasm/zkey are not in git and cannot be rebuilt to match their pins.
       - run: pnpm exec tsx --test --test-force-exit tests/integration/**/*.test.ts
+        env:
+          ZKP_ARTIFACT_SET: test
 
   test-e2e:
     runs-on: ubuntu-latest
@@ -87,6 +91,8 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: NODE_ENV=test pnpm exec tsx --test --test-force-exit tests/e2e/**/*.test.ts
+        env:
+          ZKP_ARTIFACT_SET: test
 
   docker-smoke:
     runs-on: ubuntu-latest
