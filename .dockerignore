@@ -18,3 +18,8 @@ tmp
 *.db-wal
 *.db-shm
 .DS_Store
+
+# Insecure test-only ZKP keys never ship (zkpArtifacts.ts refuses them in
+# production regardless).
+zkp/test-artifacts
+zkp/artifact-manifest.test.json

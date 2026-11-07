@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "testOnly": true,
+  "note": "INSECURE test-only Groth16 keys (public setup entropy). Loaded only with ZKP_ARTIFACT_SET=test, never in production. Rebuild with zkp/scripts/build-test-artifacts.sh.",
+  "circuits": {
+    "ine_age_proof_v1": {
+      "source": "circuits/ine_age_proof.circom",
+      "sha256": "2219e46692860cbec0400a3d159b116923ddf043744a9062216a715537ce9d44"
+    },
+    "nullifier_proof_v1": {
+      "source": "circuits/nullifier_proof.circom",
+      "sha256": "b99c24efab542c851fcea4d5371310619625e62e3927543689956a616836596e"
+    }
+  },
+  "artifacts": {
+    "ine_age_proof_wasm": {
+      "circuitId": "ine_age_proof_v1",
+      "kind": "wasm",
+      "path": "test-artifacts/ine_age_proof_test.wasm",
+      "sha256": "a0597b6c1ed90ffc1234845b51575dbd979715dc5b8e63b8a72847a323b88e5d"
+    },
+    "ine_age_proof_zkey": {
+      "circuitId": "ine_age_proof_v1",
+      "kind": "zkey",
+      "path": "test-artifacts/ine_age_proof_test.zkey",
+      "sha256": "40ea9a5a77d5c8b7cdfebbaf4dec779905ff2dcf96f6fd15cab88e1498eeb52d"
+    },
+    "ine_age_proof_vkey": {
+      "circuitId": "ine_age_proof_v1",
+      "kind": "vkey",
+      "path": "test-artifacts/ine_age_proof_test_vkey.json",
+      "sha256": "89254534e88f22d54419cdb85671f3277fdd14e589c4306d3f025f6562c71976"
+    },
+    "nullifier_proof_wasm": {
+      "circuitId": "nullifier_proof_v1",
+      "kind": "wasm",
+      "path": "test-artifacts/nullifier_proof_test.wasm",
+      "sha256": "8e5ced8eb100b341a26325c89a6ce260e5e9cef48e61b84ed985226b5b391d29"
+    },
+    "nullifier_proof_zkey": {
+      "circuitId": "nullifier_proof_v1",
+      "kind": "zkey",
+      "path": "test-artifacts/nullifier_proof_test.zkey",
+      "sha256": "169822f71dd5fcf95e181cfe982797b7f691cbcea13a038ccf72608f863c1c31"
+    },
+    "nullifier_proof_vkey": {
+      "circuitId": "nullifier_proof_v1",
+      "kind": "vkey",
+      "path": "test-artifacts/nullifier_proof_test_vkey.json",
+      "sha256": "655076c14c6a3d2fc30abd60152ef11a5bc1d917dcfc74ec2c33ccd2b66b18fb"
+    }
+  }
+}

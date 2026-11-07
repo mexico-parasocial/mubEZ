@@ -50,6 +50,30 @@ All generated files live in `zkp/out/` (gitignored):
 | `ine_age_proof_final.zkey` | Proving key (keep secret!) |
 | `verification_key.json` | Verification key (can be public) |
 
+## Test artifacts (insecure, committed)
+
+The production `*.wasm` and `*.zkey` are not in git, and their phase 2 used
+random entropy, so they cannot be rebuilt to match the pins in
+`artifact-manifest.json`. Tests prove against a separate set instead:
+
+| | |
+|---|---|
+| Files | `test-artifacts/*_test.{wasm,zkey}`, `test-artifacts/*_test_vkey.json` |
+| Manifest | `artifact-manifest.test.json` (`testOnly: true`), which also pins the circuit sources |
+| Selected by | `ZKP_ARTIFACT_SET=test` (set by `pnpm test:integration`, `pnpm test:e2e` and CI) |
+| Rebuild | `CIRCOM="npx circom2" CIRCOMLIB_DIR=<circomlib 2.x> pnpm zkp:test-artifacts` |
+
+**Anyone can forge proofs against these keys**: every setup contribution
+uses published entropy. So `ZKP_ARTIFACT_SET=test` is refused when
+`NODE_ENV=production`, both at boot (`start/env.ts`) and at load
+(`src/services/zkpArtifacts.ts`). The files are kept out of the build
+(`adonisrc.ts` copies only the production set) and out of the image
+(`.dockerignore`). A test-key proof does not verify under the production
+vkey (`tests/unit/zkp-artifacts.test.ts`).
+
+After changing a circuit, rebuild the set: the unit test fails while
+`artifact-manifest.test.json` pins an older source.
+
 ## Integration with INE flow
 
 ```

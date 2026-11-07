@@ -29,6 +29,20 @@ function loadVkey(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
+/**
+ * A proof or signal list snarkjs cannot even parse is client input, not a
+ * server fault: it is an invalid proof. The verification key is loaded (and
+ * integrity-checked) by the caller, outside this, so an artifact failure
+ * still throws.
+ */
+async function verifyOrFalse(vkey: unknown, publicSignals: string[], proof: unknown): Promise<boolean> {
+  try {
+    return await groth16.verify(vkey, publicSignals, proof)
+  } catch {
+    return false
+  }
+}
+
 /** Schema version stored with proof artifacts for circuit compatibility tracking. */
 export const PROOF_SCHEMA_VERSION = '1.0.0'
 
@@ -105,7 +119,7 @@ export async function generateAgeProof(input: AgeProofInput): Promise<AgeProofRe
  */
 export async function verifyAgeProof(proof: unknown, publicSignals: string[]): Promise<boolean> {
   const vkey = loadVkey(AGE_VKEY())
-  return groth16.verify(vkey, publicSignals, proof)
+  return verifyOrFalse(vkey, publicSignals, proof)
 }
 
 /**
@@ -136,7 +150,7 @@ export async function generateNullifierProof(input: NullifierProofInput): Promis
  */
 export async function verifyNullifierProof(proof: unknown, publicSignals: string[]): Promise<boolean> {
   const vkey = loadVkey(NULL_VKEY())
-  return groth16.verify(vkey, publicSignals, proof)
+  return verifyOrFalse(vkey, publicSignals, proof)
 }
 
 /**

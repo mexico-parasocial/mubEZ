@@ -67,6 +67,7 @@
 - **Duplicate commitment rejection**: 409 conflict if commitment is already active.
 - **Nullifier uniqueness**: One nullifier per (salt, communityId) pair enforced in DB.
 - **Issuer key rotation**: Previous key is verification-only and auto-expires.
+- **Test ZKP keys never verify in production**: the committed test artifact set (`zkp/test-artifacts/`, public setup entropy, forgeable) loads only with `ZKP_ARTIFACT_SET=test`, which is refused when `NODE_ENV=production` at boot and at load, and is excluded from the build and the image.
 - **Demo path lockout**: Demo/simulated/dev paths require both GrowthBook flag **and** (`non-production env` or explicit break-glass env). A flag alone cannot open them in production.
 
 ### Best-Effort Controls
@@ -85,5 +86,6 @@
 5. **Distributed rate limiting**: Current in-memory `Map` will not work across PM2 clusters or horizontal replicas. Migrate to Redis-backed limiter before multi-instance deployment.
 6. **No selective disclosure (current-state gap)**: `/identity/verify` presentations are full-credential (CD-13); every claim in the presented credential reaches the verifier. Mitigations: credentials with unrequested `curp_hash` / `district_hash` are refused, and each enrollment also issues a minimized `basicCredential` without them. Presentations remain linkable (subject DID, holder key, revocation hash). A cryptographic disclosure format is not built.
 7. **Identity resolution**: Handle login is bidirectionally verified against a freshly resolved DID document and fails closed on directory outage. PDS routing still uses a stale-while-revalidate cache (≤ 1 h, never expired); key checks use ≤ 5 min.
-8. **Age proof not issuer-bound (current-state gap)**: `ine_age_proof`'s `birthYear` is a free client witness and `/identity/ine/credential` does not compare it with the INE birth date, so the `age_over_18` claim rests on the client's word. A real issuer must check the birth date itself (see `docs/V3_UNLINKABLE_AGE_PROOFS.md`).
+8. **Age proof not issuer-bound — closed for issuance (CD-16)**: `/identity/ine/credential` now attests `age_over_18` / `age_over_21` from the INE birth date, to the day, and refuses underage records and unsupported over-21 proofs; the proof's free `birthYear` no longer decides age. Residual: the claim is only as good as the INE record, which in this build is the simulated extraction relayed by the client (WALLET_PRIVACY blocker 2).
+10. **v3 age tree published, not yet consumed**: the issuer age tree (CD-16) is live: signed roots, revocation by leaf zeroing within 24 h, chunked public reads. No circuit or verifier accepts v3 proofs yet, so age checks still go through v2 presentations, which CD-15 forbids for release.
 9. **Nullifier proofs publish the commitment**: community memberships are linkable to each other and to the session through `nullifiers.commitment` / `session_id`.

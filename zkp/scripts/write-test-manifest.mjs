@@ -1,0 +1,30 @@
+// Writes zkp/artifact-manifest.test.json for the files build-test-artifacts.sh
+// produced: their sha256, and the sha256 of the circuit sources they were
+// built from, so the set cannot silently drift from the circuits.
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const ZKP = join(dirname(fileURLToPath(import.meta.url)), '..')
+const sha256 = (path) => createHash('sha256').update(readFileSync(join(ZKP, path))).digest('hex')
+
+const artifacts = {}
+const circuits = {}
+for (const name of ['ine_age_proof', 'nullifier_proof']) {
+  const circuitId = `${name}_v1`
+  circuits[circuitId] = { source: `circuits/${name}.circom`, sha256: sha256(`circuits/${name}.circom`) }
+  for (const [kind, file] of [['wasm', `${name}_test.wasm`], ['zkey', `${name}_test.zkey`], ['vkey', `${name}_test_vkey.json`]]) {
+    const path = `test-artifacts/${file}`
+    artifacts[`${name}_${kind}`] = { circuitId, kind, path, sha256: sha256(path) }
+  }
+}
+
+const manifest = {
+  version: '1.0.0',
+  testOnly: true,
+  note: 'INSECURE test-only Groth16 keys (public setup entropy). Loaded only with ZKP_ARTIFACT_SET=test, never in production. Rebuild with zkp/scripts/build-test-artifacts.sh.',
+  circuits,
+  artifacts,
+}
+writeFileSync(join(ZKP, 'artifact-manifest.test.json'), JSON.stringify(manifest, null, 2) + '\n')

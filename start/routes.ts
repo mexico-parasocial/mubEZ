@@ -18,6 +18,12 @@ router
     router.post('/sessions/refresh', '#controllers/sessions_controller.refresh')
 
     router.get('/identity/crl', '#controllers/revocation_controller.crl')
+    // Issuer age tree for v3 age proofs (CD-16): public and session-free, so
+    // reading a chunk or checking a root never identifies the reader.
+    router.get('/identity/age-tree/root', '#controllers/age_tree_controller.root')
+    router.get('/identity/age-tree/roots', '#controllers/age_tree_controller.roots')
+    router.get('/identity/age-tree/chunk-roots', '#controllers/age_tree_controller.chunkRoots')
+    router.get('/identity/age-tree/chunks/:chunk', '#controllers/age_tree_controller.chunk')
     router.get('/identity/ine/zkp-prover.html', '#controllers/zk_proof_controller.zkpProverHtml')
     router.get('/identity/ine/zkp-prover.wasm', '#controllers/zk_proof_controller.zkpProverWasm')
     router.get('/identity/ine/zkp-prover.zkey', '#controllers/zk_proof_controller.zkpProverZkey')
@@ -111,6 +117,7 @@ router
         router.post('/identity/ine/dev-enroll', '#controllers/ine_controller.devEnroll')
         router.post('/identity/ine/zkp-verify', '#controllers/zk_proof_controller.zkpVerify')
         router.post('/identity/revoke', '#controllers/revocation_controller.revoke')
+        router.post('/identity/age-tree/leaves/refresh', '#controllers/age_tree_controller.refresh')
         router.post('/identity/ine/zkp-nullifier', '#controllers/zk_proof_controller.zkpNullifier')
         router.post('/identity/civic-vote-proof', '#controllers/civic_vote_identity_controller.issueProof')
         router.post('/identity/civic-delegation-proof', '#controllers/civic_vote_identity_controller.issueDelegationProof')

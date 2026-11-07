@@ -159,6 +159,40 @@ CREATE TABLE IF NOT EXISTS wallet_binding_requests (
   expires_at TEXT NOT NULL
 );
 
+-- 039 (additive tables only; wallet_binding_requests.age_leaf_commitment is
+-- an unguarded ALTER in 039 and stays out of this baseline).
+CREATE TABLE IF NOT EXISTS age_tree_leaves (
+  leaf_index INTEGER PRIMARY KEY,
+  leaf TEXT NOT NULL,
+  proof_artifact_id TEXT NOT NULL,
+  expiry_day INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'replaced')),
+  in_tree INTEGER NOT NULL DEFAULT 0 CHECK (in_tree IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_age_tree_leaves_artifact ON age_tree_leaves(proof_artifact_id);
+CREATE INDEX IF NOT EXISTS idx_age_tree_leaves_in_tree ON age_tree_leaves(in_tree, expiry_day);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_age_tree_leaves_one_active
+  ON age_tree_leaves(proof_artifact_id) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS age_tree_nodes (
+  level INTEGER NOT NULL,
+  node_index INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  PRIMARY KEY (level, node_index)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS age_tree_roots (
+  version INTEGER PRIMARY KEY,
+  root TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  issued_at TEXT NOT NULL,
+  issuer_did TEXT,
+  key_id TEXT,
+  signature TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_age_tree_roots_root ON age_tree_roots(root);
+
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   token_hash TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,

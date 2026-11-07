@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db/connection.js'
 import { ensureIssuanceChallenge } from './issuanceChallenge.js'
 import { parseHolderPublicKey, verifyHolderKeyProof } from './identityWallet.js'
+import type { IssuedAgeLeaf } from './ageTree.js'
 import type {
   M8IdentityCredential,
   M8IdentityRequest,
@@ -44,6 +45,8 @@ export type WalletCredentialDelivery = {
   proofArtifactId: string
   credential: M8IdentityCredential
   basicCredential: M8IdentityCredential
+  /** The v3 age leaf, when the wallet sent an ageLeafCommitment with its binding. */
+  ageLeaf?: IssuedAgeLeaf
 }
 
 function pruneExpired() {
@@ -112,12 +115,14 @@ export type BindingResult =
 
 /**
  * Wallet: bind a device-generated holder key. Accepted only when the proof
- * signs exactly this request's snapshotted issuance challenge.
+ * signs exactly this request's snapshotted issuance challenge. The wallet may
+ * also hand over H, the commitment to its v3 age secret (ageTree.ts), so the
+ * age leaf is issued against a secret that never left the device.
  */
 export function fulfillWalletBindingRequest(
   sessionId: string,
   id: string,
-  input: { holderPublicKey: string; holderKeyProof: string },
+  input: { holderPublicKey: string; holderKeyProof: string; ageLeafCommitment?: string },
 ): BindingResult {
   const row = getRow(sessionId, id)
   if (!row) return { ok: false, reason: 'not-found' }
@@ -127,9 +132,9 @@ export function fulfillWalletBindingRequest(
   }
   const updated = getDb()
     .prepare(
-      "UPDATE wallet_binding_requests SET status = 'bound', holder_public_key = ? WHERE id = ? AND status = 'pending'"
+      "UPDATE wallet_binding_requests SET status = 'bound', holder_public_key = ?, age_leaf_commitment = ? WHERE id = ? AND status = 'pending'"
     )
-    .run(input.holderPublicKey.trim(), id)
+    .run(input.holderPublicKey.trim(), input.ageLeafCommitment ?? null, id)
   return updated.changes === 1 ? { ok: true } : { ok: false, reason: 'not-pending' }
 }
 
@@ -146,18 +151,20 @@ export function declineWalletBindingRequest(sessionId: string, id: string): Bind
 
 /**
  * Issuance: the holder key a bound request carries, if it was bound against
- * the challenge being presented. The possession proof was verified at bind.
+ * the challenge being presented, and the age leaf commitment the wallet sent
+ * with it, if any. The possession proof was verified at bind.
  */
 export function boundHolderKeyForIssuance(
   sessionId: string,
   id: string,
   issuanceChallenge: string,
-): string | null {
+): { holderPublicKey: string; ageLeafCommitment: string | null } | null {
   const row = getRow(sessionId, id)
   if (!row || row.status !== 'bound') return null
   if (row.issuance_challenge !== issuanceChallenge) return null
   const key = row.holder_public_key as string | null
-  return key && parseHolderPublicKey(key) ? key : null
+  if (!key || !parseHolderPublicKey(key)) return null
+  return { holderPublicKey: key, ageLeafCommitment: (row.age_leaf_commitment as string | null) ?? null }
 }
 
 /** Issuance: hand the credentials to the wallet's mailbox. */

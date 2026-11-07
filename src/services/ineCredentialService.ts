@@ -154,6 +154,8 @@ export async function recordIneCredential(opts: {
       verificationId: verification.verificationId,
       commitment,
       anonymousProfile,
+      /** Enrollment expiry, for the age leaf; not part of the HTTP response. */
+      expiresAt,
     },
   }
 }
