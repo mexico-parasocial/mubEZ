@@ -59,7 +59,8 @@ random entropy, so they cannot be rebuilt to match the pins in
 | | |
 |---|---|
 | Files | `test-artifacts/*_test.{wasm,zkey}`, `test-artifacts/*_test_vkey.json` |
-| Manifest | `artifact-manifest.test.json` (`testOnly: true`), which also pins the circuit sources |
+| Manifest | `artifact-manifest.test.json` (`testOnly: true`), which also pins the circuit sources, including `circuits/lib/merkle.circom` |
+| Ceremony | Powers of Tau 2^15 (`nullifier_proof_v2` has ~8.4k constraints; snarkjs needs twice that), unlike the 2^12 development setup |
 | Selected by | `ZKP_ARTIFACT_SET=test` (set by `pnpm test:integration`, `pnpm test:e2e` and CI) |
 | Rebuild | `CIRCOM="npx circom2" CIRCOMLIB_DIR=<circomlib 2.x> pnpm zkp:test-artifacts` |
 

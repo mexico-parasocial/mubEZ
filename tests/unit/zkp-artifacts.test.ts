@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 
 const ARTIFACT_IDS = [
   'ine_age_proof_wasm', 'ine_age_proof_zkey', 'ine_age_proof_vkey',
-  'nullifier_proof_wasm', 'nullifier_proof_zkey', 'nullifier_proof_vkey',
+  'nullifier_proof_v2_wasm', 'nullifier_proof_v2_zkey', 'nullifier_proof_v2_vkey',
 ] as const
 
 const zkpFile = (path: string) => new URL(`../../zkp/${path}`, import.meta.url)
@@ -95,7 +95,7 @@ describe('ZKP artifact integrity', () => {
       const actual = createHash('sha256').update(readFileSync(zkpFile(circuit.source))).digest('hex')
       assert.equal(actual, circuit.sha256, `${circuitId}: ${circuit.source} changed; run pnpm zkp:test-artifacts`)
     }
-    assert.deepEqual(Object.keys(test.circuits ?? {}).sort(), ['ine_age_proof_v1', 'nullifier_proof_v1'])
+    assert.deepEqual(Object.keys(test.circuits ?? {}).sort(), ['ine_age_proof_v1', 'merkle_lib', 'nullifier_proof_v2_dev'])
   })
 
   it('proves and verifies with the test set, and the production key rejects those proofs', async () => {

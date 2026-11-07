@@ -34,13 +34,20 @@ trap 'rm -rf "${WORK}"' EXIT
 # cannot resolve ".." in include paths, so the copy includes "circomlib/..."
 # instead of "../circomlib/...". Nothing else in the sources changes, and the
 # manifest pins the unmodified files in zkp/circuits/.
-mkdir -p "${WORK}/circuits/circomlib"
+mkdir -p "${WORK}/circuits/circomlib" "${WORK}/circuits/lib"
 cp "${ZKP_DIR}"/circuits/*.circom "${WORK}/circuits/"
+cp "${ZKP_DIR}"/circuits/lib/*.circom "${WORK}/circuits/lib/"
 cp -R "${CIRCOMLIB_DIR}/circuits" "${WORK}/circuits/circomlib/circuits"
+# Top-level circuits include circomlib as a sibling; the files in lib/ (which
+# sit one directory deeper) are rewritten the same way and resolved through
+# the "-l ." library path below, because ".." cannot be resolved either.
 sed -i.orig 's#include "../circomlib/#include "circomlib/#' "${WORK}"/circuits/*.circom
+sed -i.orig 's#include "../../circomlib/#include "circomlib/#' "${WORK}"/circuits/lib/*.circom
 
-echo "=== Powers of tau (2^12, fixed entropy) ==="
-"${SNARKJS}" powersoftau new bn128 12 "${WORK}/pot_0000.ptau"
+# 2^15: nullifier_proof_v2 has ~8.4k constraints, and snarkjs needs 2 * constraints <= 2^power.
+POT_POWER=15
+echo "=== Powers of tau (2^${POT_POWER}, fixed entropy) ==="
+"${SNARKJS}" powersoftau new bn128 "${POT_POWER}" "${WORK}/pot_0000.ptau"
 "${SNARKJS}" powersoftau contribute "${WORK}/pot_0000.ptau" "${WORK}/pot_0001.ptau" \
   --name="mubez-test-only-INSECURE" -e="mubez test artifacts: public entropy, not secure"
 "${SNARKJS}" powersoftau prepare phase2 "${WORK}/pot_0001.ptau" "${WORK}/pot_final.ptau"
@@ -48,9 +55,9 @@ echo "=== Powers of tau (2^12, fixed entropy) ==="
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}"
 
-for name in ine_age_proof nullifier_proof; do
+for name in ine_age_proof nullifier_proof_v2; do
   echo "=== ${name} ==="
-  (cd "${WORK}/circuits" && ${CIRCOM} "${name}.circom" --r1cs --wasm -o "${WORK}")
+  (cd "${WORK}/circuits" && ${CIRCOM} "${name}.circom" -l . --r1cs --wasm -o "${WORK}")
   "${SNARKJS}" groth16 setup "${WORK}/${name}.r1cs" "${WORK}/pot_final.ptau" "${WORK}/${name}_0000.zkey"
   "${SNARKJS}" zkey contribute "${WORK}/${name}_0000.zkey" "${OUT_DIR}/${name}_test.zkey" \
     --name="mubez-test-only-INSECURE" -e="mubez ${name} test key: public entropy, not secure"

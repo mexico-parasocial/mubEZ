@@ -7,9 +7,13 @@
       "source": "circuits/ine_age_proof.circom",
       "sha256": "2219e46692860cbec0400a3d159b116923ddf043744a9062216a715537ce9d44"
     },
-    "nullifier_proof_v1": {
-      "source": "circuits/nullifier_proof.circom",
-      "sha256": "b99c24efab542c851fcea4d5371310619625e62e3927543689956a616836596e"
+    "nullifier_proof_v2_dev": {
+      "source": "circuits/nullifier_proof_v2.circom",
+      "sha256": "f47d192a6d5613135db7177f29e1039a07dbc3b05d4c12a31c009cf64f941035"
+    },
+    "merkle_lib": {
+      "source": "circuits/lib/merkle.circom",
+      "sha256": "54d0695b82ed8ae2ce4f2c5f11cc89b87c4cf7e25003d3a8965deb987d9eb782"
     }
   },
   "artifacts": {
@@ -23,31 +27,31 @@
       "circuitId": "ine_age_proof_v1",
       "kind": "zkey",
       "path": "test-artifacts/ine_age_proof_test.zkey",
-      "sha256": "40ea9a5a77d5c8b7cdfebbaf4dec779905ff2dcf96f6fd15cab88e1498eeb52d"
+      "sha256": "cd64052ff04b328f1fd6f9779de8e14f64deef51f433635a692d0903f6d2e1b8"
     },
     "ine_age_proof_vkey": {
       "circuitId": "ine_age_proof_v1",
       "kind": "vkey",
       "path": "test-artifacts/ine_age_proof_test_vkey.json",
-      "sha256": "89254534e88f22d54419cdb85671f3277fdd14e589c4306d3f025f6562c71976"
+      "sha256": "dccd82be7000b24d9bdd38114a488cca41e35b79b3e3af2d3b8877b7e6965d71"
     },
-    "nullifier_proof_wasm": {
-      "circuitId": "nullifier_proof_v1",
+    "nullifier_proof_v2_wasm": {
+      "circuitId": "nullifier_proof_v2_dev",
       "kind": "wasm",
-      "path": "test-artifacts/nullifier_proof_test.wasm",
-      "sha256": "8e5ced8eb100b341a26325c89a6ce260e5e9cef48e61b84ed985226b5b391d29"
+      "path": "test-artifacts/nullifier_proof_v2_test.wasm",
+      "sha256": "2fae0d8304ed536f18cb1e91d2784463b86abcc1920c167aa08aaaf22ca0b168"
     },
-    "nullifier_proof_zkey": {
-      "circuitId": "nullifier_proof_v1",
+    "nullifier_proof_v2_zkey": {
+      "circuitId": "nullifier_proof_v2_dev",
       "kind": "zkey",
-      "path": "test-artifacts/nullifier_proof_test.zkey",
-      "sha256": "169822f71dd5fcf95e181cfe982797b7f691cbcea13a038ccf72608f863c1c31"
+      "path": "test-artifacts/nullifier_proof_v2_test.zkey",
+      "sha256": "666e5e3de292e2acb919bc30c75fa0b7c2e79b22940c316921b3c6e7f32a22ff"
     },
-    "nullifier_proof_vkey": {
-      "circuitId": "nullifier_proof_v1",
+    "nullifier_proof_v2_vkey": {
+      "circuitId": "nullifier_proof_v2_dev",
       "kind": "vkey",
-      "path": "test-artifacts/nullifier_proof_test_vkey.json",
-      "sha256": "655076c14c6a3d2fc30abd60152ef11a5bc1d917dcfc74ec2c33ccd2b66b18fb"
+      "path": "test-artifacts/nullifier_proof_v2_test_vkey.json",
+      "sha256": "ac43d3b76fe0bd33e21f74475af67b32c1ff67a300797a47ee393f412cc287ec"
     }
   }
 }
