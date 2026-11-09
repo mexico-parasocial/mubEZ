@@ -153,6 +153,23 @@
           },
           "surface": {
             "$ref": "#/components/schemas/Surface"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "mobile",
+              "web"
+            ]
+          },
+          "returnTo": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Exact allowlisted callback URI."
+          },
+          "exchangeChallenge": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "Optional PKCE S256 challenge; required by PARA."
           }
         }
       },
@@ -199,6 +216,18 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "returnTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exchangeChallenge": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": true
@@ -486,7 +515,7 @@
             "enum": [
               "firma",
               "pregunta",
-              "señal",
+              "se\u00f1al",
               "testimonio"
             ]
           },
@@ -574,7 +603,7 @@
             "enum": [
               "firma",
               "pregunta",
-              "señal",
+              "se\u00f1al",
               "testimonio"
             ]
           },
@@ -1532,7 +1561,7 @@
             }
           },
           "202": {
-            "description": "OAuth authorization started. No M8 session is created and tokens are issued only from the OAuth callback.",
+            "description": "OAuth authorization started; tokens are issued after the authenticated callback or its single-use handoff exchange.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1553,6 +1582,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Explicit handoff disabled (OAUTH_HANDOFF_UNAVAILABLE)."
           }
         }
       }
@@ -3830,7 +3862,7 @@
         "tags": [
           "ZKP"
         ],
-        "summary": "Verify and record a community nullifier proof.",
+        "summary": "Verify and record a community nullifier proof (v2, CD-17). The Groth16 proof shows membership in the issuer's enrollment tree without revealing the enrollment; publicSignals are [root, nullifier, communityId, currentYear, ageThreshold]. The root must be current or superseded within the grace window, currentYear the current UTC year, and ageThreshold between 18 and 120. Only the nullifier and community are stored.",
         "security": [
           {
             "bearerAuth": []
@@ -3858,7 +3890,7 @@
             }
           },
           "400": {
-            "description": "Invalid proof, duplicate nullifier, or mismatch.",
+            "description": "Invalid proof, reused nullifier, community mismatch, wrong year, out-of-range threshold, or an unknown or stale root.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5441,7 +5473,7 @@
         "tags": [
           "Sessions"
         ],
-        "summary": "Exchange a one-time OAuth handoff code for tokens (mobile sign-in).",
+        "summary": "Exchange an attempt-bound native or web OAuth code for tokens.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5454,6 +5486,15 @@
                 "properties": {
                   "code": {
                     "type": "string"
+                  },
+                  "attemptId": {
+                    "type": "string",
+                    "description": "Expected attempt binding; supplied by PARA."
+                  },
+                  "verifier": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._~-]{43,128}$",
+                    "description": "Required when the attempt has an S256 exchange challenge."
                   }
                 }
               }
@@ -5471,7 +5512,8 @@
                     "authenticated",
                     "sessionId",
                     "session",
-                    "tokens"
+                    "tokens",
+                    "attemptId"
                   ],
                   "properties": {
                     "authenticated": {
@@ -5485,6 +5527,9 @@
                     },
                     "tokens": {
                       "$ref": "#/components/schemas/TokenBundle"
+                    },
+                    "attemptId": {
+                      "type": "string"
                     }
                   }
                 }
@@ -5604,7 +5649,7 @@
             }
           },
           "401": {
-            "description": "Bad challenge or bad proof — \"Registration rejected\".",
+            "description": "Bad challenge or bad proof \u2014 \"Registration rejected\".",
             "content": {
               "application/json": {
                 "schema": {
@@ -7006,6 +7051,111 @@
                 }
               }
             }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          }
+        }
+      }
+    },
+    "/v1/identity/enrollment-tree": {
+      "get": {
+        "tags": [
+          "ZKP"
+        ],
+        "summary": "The issuer's enrollment tree (CD-17), public so that downloading it identifies nobody. Clients find their own leaf (their enrollment commitment) and path locally.",
+        "responses": {
+          "200": {
+            "description": "Tree depth, root, populated levels (levels[0] are the leaves; '0' is an empty or revoked leaf) and zero-subtree hashes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "depth",
+                    "root",
+                    "levels",
+                    "zeros"
+                  ],
+                  "properties": {
+                    "depth": {
+                      "type": "integer"
+                    },
+                    "root": {
+                      "type": "string"
+                    },
+                    "levels": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "zeros": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/logout": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Revoke this refresh credential and its replacements, preserving other devices. Access JWTs expire normally.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential family revoked if it belongs to the authenticated session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "422": {
             "$ref": "#/components/responses/ValidationFailed"

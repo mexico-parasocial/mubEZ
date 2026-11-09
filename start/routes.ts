@@ -24,6 +24,8 @@ router
     router.get('/identity/age-tree/roots', '#controllers/age_tree_controller.roots')
     router.get('/identity/age-tree/chunk-roots', '#controllers/age_tree_controller.chunkRoots')
     router.get('/identity/age-tree/chunks/:chunk', '#controllers/age_tree_controller.chunk')
+    // Public so that downloading it identifies nobody (CD-17).
+    router.get('/identity/enrollment-tree', '#controllers/zk_proof_controller.enrollmentTree')
     router.get('/identity/ine/zkp-prover.html', '#controllers/zk_proof_controller.zkpProverHtml')
     router.get('/identity/ine/zkp-prover.wasm', '#controllers/zk_proof_controller.zkpProverWasm')
     router.get('/identity/ine/zkp-prover.zkey', '#controllers/zk_proof_controller.zkpProverZkey')
@@ -51,6 +53,7 @@ router
     // Protected routes
     router
       .group(() => {
+        router.post('/sessions/logout', '#controllers/sessions_controller.logout')
         router.get('/sessions/me', '#controllers/sessions_controller.me')
         router.post('/sessions/anonymous/enable', '#controllers/sessions_controller.enableAnonymous')
         router.post('/sessions/anonymous/disable', '#controllers/sessions_controller.disableAnonymous')

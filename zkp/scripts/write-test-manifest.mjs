@@ -9,16 +9,24 @@ import { fileURLToPath } from 'node:url'
 const ZKP = join(dirname(fileURLToPath(import.meta.url)), '..')
 const sha256 = (path) => createHash('sha256').update(readFileSync(join(ZKP, path))).digest('hex')
 
+// Artifact ids and circuit ids match the production manifest, which the unit
+// tests compare against. ine_age_proof's circuit id predates the _dev suffix.
+const CIRCUITS = [
+  { name: 'ine_age_proof', circuitId: 'ine_age_proof_v1' },
+  { name: 'nullifier_proof_v2', circuitId: 'nullifier_proof_v2_dev' },
+]
 const artifacts = {}
 const circuits = {}
-for (const name of ['ine_age_proof', 'nullifier_proof']) {
-  const circuitId = `${name}_v1`
+for (const { name, circuitId } of CIRCUITS) {
   circuits[circuitId] = { source: `circuits/${name}.circom`, sha256: sha256(`circuits/${name}.circom`) }
   for (const [kind, file] of [['wasm', `${name}_test.wasm`], ['zkey', `${name}_test.zkey`], ['vkey', `${name}_test_vkey.json`]]) {
     const path = `test-artifacts/${file}`
     artifacts[`${name}_${kind}`] = { circuitId, kind, path, sha256: sha256(path) }
   }
 }
+// Included by nullifier_proof_v2 (and the v3 draft): a change to it changes the
+// circuit, so it is pinned like a circuit source.
+circuits.merkle_lib = { source: 'circuits/lib/merkle.circom', sha256: sha256('circuits/lib/merkle.circom') }
 
 const manifest = {
   version: '1.0.0',

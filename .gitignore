@@ -29,6 +29,7 @@ zkp/out/*.json
 !zkp/out/*_vkey.json
 zkp/out/ine_age_proof_js/
 zkp/out/nullifier_proof_js/
+zkp/out/nullifier_proof_v2_js/
 zkp/circomlib/
 
 # Test artifacts
