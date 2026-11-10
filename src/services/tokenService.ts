@@ -166,6 +166,7 @@ export async function rotateRefreshToken(refreshToken: string) {
     accessToken,
     refreshToken: nextRefreshToken,
     expiresIn: env.get('JWT_ACCESS_TTL_SECONDS'),
+    sessionId,
   }
 }
 
